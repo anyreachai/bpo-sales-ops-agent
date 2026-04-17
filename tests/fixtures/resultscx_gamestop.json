@@ -1,0 +1,12 @@
+{
+  "message_id": "test_001",
+  "from": "jarmstrong@resultscx.com",
+  "subject": "GameStop demo request",
+  "body": "Hi Richard,\n\nCan you set up a demo for GameStop? They're looking to improve their customer support experience, especially around the trade-in program.\n\nThe contact is Jane Smith, VP of Customer Experience. Their main pain points are long hold times and high agent attrition. They're currently on Genesys Cloud CX with Salesforce Service Cloud.\n\nWould love the full package — demo, research report, stakeholder brief.\n\nThanks,\nJordan",
+  "expected": {
+    "bpo_partner": "resultscx",
+    "target_company": "GameStop",
+    "request_types": ["demo", "deep_research", "stakeholder_intel"],
+    "intake_answered": true
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "message_id": "test_010",
+  "from": "smukherjee@startek.com",
+  "subject": "CX Intel report for Wayfair",
+  "body": "Richard,\n\nCan you run a CX Intel report on Wayfair? We want to understand their customer sentiment before our pitch next month.\n\nwayfair.com\n\nSid",
+  "expected": {
+    "bpo_partner": "startek",
+    "target_company": "Wayfair",
+    "request_types": ["cx_intel"],
+    "intake_answered": false
+  }
+}

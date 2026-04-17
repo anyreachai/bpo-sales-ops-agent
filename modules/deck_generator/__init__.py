@@ -1,0 +1,1 @@
+from modules.deck_generator.module import DeckGeneratorModule

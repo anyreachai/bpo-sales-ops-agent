@@ -1,0 +1,12 @@
+{
+  "message_id": "test_006",
+  "from": "khayford@esal.com",
+  "subject": "Quick demo for Peloton",
+  "body": "Richard — can you spin up a demo for Peloton? Just the demo for now, nothing else. peloton.com\n\nKojo",
+  "expected": {
+    "bpo_partner": "esal",
+    "target_company": "Peloton",
+    "request_types": ["demo"],
+    "intake_answered": false
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "message_id": "test_009",
+  "from": "mjourdan@resultscx.com",
+  "subject": "Re: GameStop demo request",
+  "body": "Hi Richard,\n\nFollowing up on Jordan's email. Here are the answers to your intake questions:\n\n1. Contact: Jane Smith, VP Customer Experience (C-suite adjacent)\n2. Business area: Customer support for trade-in and repair program\n3. Pain points: 45-minute average hold times, 65% annual agent attrition, CSAT dropped from 78 to 62 in Q1\n4. Current setup: Genesys Cloud CX for voice/chat, Salesforce Service Cloud for ticketing, Five9 backup IVR\n\nPlease also add a stakeholder intel report on Jane.\n\nThanks,\nMichelle",
+  "expected": {
+    "bpo_partner": "resultscx",
+    "target_company": "GameStop",
+    "request_types": ["stakeholder_intel"],
+    "intake_answered": true,
+    "note": "Follow-up to existing request - should update existing pipeline row, not create new"
+  }
+}

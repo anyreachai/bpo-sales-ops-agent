@@ -1,0 +1,1 @@
+from modules.stakeholder_intel.module import StakeholderIntelModule

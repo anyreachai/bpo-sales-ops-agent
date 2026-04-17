@@ -1,0 +1,12 @@
+{
+  "message_id": "test_003",
+  "from": "smukherjee@startek.com",
+  "subject": "Quick question about a prospect",
+  "body": "Richard,\n\nWe've got a meeting with DoorDash next week. Can you put together some materials for us? Not sure exactly what we need yet, but probably a demo and some research.\n\nSid",
+  "expected": {
+    "bpo_partner": "startek",
+    "target_company": "DoorDash",
+    "request_types": ["demo", "deep_research"],
+    "intake_answered": false
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "resultscx": {
+    "name": "ResultsCX",
+    "email_domains": ["resultscx.com"],
+    "drive_folder_id": "1P9kkcNdPibjwHlk3tOh-Xr7UnvJIR2BB",
+    "pipeline_sheet_id": "1LYhYMYX2hWiAzTT5bRCgIIswycchV-UbIWNjcLBXPiY",
+    "key_contacts": ["Jordan Armstrong", "Michelle Jourdan", "Will Hendleman"],
+    "slack_channel": null
+  },
+  "esal": {
+    "name": "eSAL",
+    "email_domains": ["esal.com", "esalglobal.com"],
+    "drive_folder_id": "1-uIENKNcavFnbqsL9ITtiANHZUhpRhl4",
+    "pipeline_sheet_id": "1M_fnzR1G1ArHPE5e7W-pnGzAS7dmxqshnOsdJzig7Hs",
+    "key_contacts": ["Kojo Hayford"],
+    "slack_channel": null
+  },
+  "startek": {
+    "name": "Startek",
+    "email_domains": ["startek.com"],
+    "drive_folder_id": "1mg74nTK-gYKPMUsAXRJ79h4GtJ8si1bk",
+    "pipeline_sheet_id": "1lj7F2F23fm9PbXTHnSNyfWa5O_lhZxh-8tQz1aeHonE",
+    "key_contacts": ["Sid Mukherjee"],
+    "slack_channel": null
+  },
+  "cgs": {
+    "name": "CGS",
+    "email_domains": ["cgsinc.com"],
+    "drive_folder_id": "1gYImwsn0QHSyNjdno9TA2sG_dEkCi7cO",
+    "pipeline_sheet_id": null,
+    "key_contacts": [],
+    "slack_channel": null
+  },
+  "cp360": {
+    "name": "CP360",
+    "email_domains": ["cp360.com"],
+    "drive_folder_id": "1vDVJh9ewDJ25E56qAcSYy6vHazAN-sHQ",
+    "pipeline_sheet_id": "1dnWo4JYlpUypmaa86nqg6P9J7kr0uYRS6CamG8HPLZw",
+    "key_contacts": [],
+    "slack_channel": null
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "message_id": "test_008",
+  "from": "rep@cgsinc.com",
+  "subject": "Demo for Nordstrom",
+  "body": "Hey Richard,\n\nCan we get a demo set up for Nordstrom? They're interested in seeing the AI agent for their customer service.\n\nnordstrom.com\n\nThanks",
+  "expected": {
+    "bpo_partner": "cgs",
+    "target_company": "Nordstrom",
+    "request_types": ["demo"],
+    "intake_answered": false,
+    "note": "CGS has no pipeline_sheet_id - should skip Sheets update"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "message_id": "test_002",
+  "from": "khayford@esalglobal.com",
+  "subject": "Fabletics - need everything",
+  "body": "Hey Richard,\n\nWe have a big opportunity with Fabletics (fabletics.com). They want to see everything you've got — demo, CX intel, pitch deck, the works.\n\nContact: Mark Chen, SVP Operations. They're focused on subscription management and customer retention. Pain points: high churn rate, inconsistent service across channels. Running on Five9 with Zendesk.\n\nCan you turn this around in 48 hours?\n\nKojo",
+  "expected": {
+    "bpo_partner": "esal",
+    "target_company": "Fabletics",
+    "request_types": ["demo", "cx_intel", "pitch_deck", "deep_research", "stakeholder_intel"],
+    "intake_answered": true
+  }
+}

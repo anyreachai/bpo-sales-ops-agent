@@ -1,0 +1,1 @@
+from modules.slack_manager.module import SlackManagerModule

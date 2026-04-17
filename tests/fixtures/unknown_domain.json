@@ -1,0 +1,13 @@
+{
+  "message_id": "test_004",
+  "from": "jdoe@unknownbpo.com",
+  "subject": "Partnership inquiry - demo request",
+  "body": "Hi,\n\nI'm from XYZ Outsourcing. We'd love to see a demo of your platform for one of our clients, Walmart.\n\nBest,\nJohn Doe",
+  "expected": {
+    "bpo_partner": null,
+    "target_company": "Walmart",
+    "request_types": ["demo"],
+    "intake_answered": false,
+    "should_flag": true
+  }
+}

@@ -1,0 +1,1 @@
+from modules.email_composer.module import EmailComposerModule

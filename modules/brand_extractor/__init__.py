@@ -1,0 +1,1 @@
+from modules.brand_extractor.module import BrandExtractorModule

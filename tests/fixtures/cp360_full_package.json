@@ -1,0 +1,12 @@
+{
+  "message_id": "test_007",
+  "from": "contact@cp360.com",
+  "subject": "Lululemon - full package request",
+  "body": "Hi Richard,\n\nWe need the full package for Lululemon (lululemon.com).\n\nClient contact: Sarah Park, Director of Customer Experience (CX Leadership). They're focused on their online store support and returns process. Main complaints are slow response times and inconsistent quality between channels. They use Amazon Connect with Freshdesk.\n\nPlease include demo, CX intel report, pitch deck, deep research, and stakeholder brief.\n\nThanks!",
+  "expected": {
+    "bpo_partner": "cp360",
+    "target_company": "Lululemon",
+    "request_types": ["demo", "cx_intel", "pitch_deck", "deep_research", "stakeholder_intel"],
+    "intake_answered": true
+  }
+}

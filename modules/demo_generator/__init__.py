@@ -1,0 +1,1 @@
+from modules.demo_generator.module import DemoGeneratorModule

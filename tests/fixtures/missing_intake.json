@@ -1,0 +1,13 @@
+{
+  "message_id": "test_005",
+  "from": "jarmstrong@resultscx.com",
+  "subject": "Need a deep dive on Target",
+  "body": "Richard,\n\nCan you run a deep research and stakeholder intel on Target? We're meeting with them next week.\n\nThanks,\nJordan",
+  "expected": {
+    "bpo_partner": "resultscx",
+    "target_company": "Target",
+    "request_types": ["deep_research", "stakeholder_intel"],
+    "intake_answered": false,
+    "should_request_intake": true
+  }
+}
