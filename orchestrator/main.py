@@ -76,6 +76,10 @@ async def _post_slack_approval(ctx: SessionContext) -> None:
         logger.warning("No SLACK_BOT_TOKEN — skipping Slack approval post")
         return
 
+    if ctx.dry_run:
+        logger.info("Dry-run: skipping Slack approval post for %s", ctx.session_id)
+        return
+
     company = ctx.target_company or "Unknown Company"
     bpo_name = ctx.bpo.name if ctx.bpo else "Unknown BPO"
     artifact_lines = [f"• {a.filename} ({a.artifact_type})" for a in ctx.all_artifacts]
@@ -288,9 +292,11 @@ async def lifespan(app: FastAPI):
 
     # Start Gmail poller if credentials are configured
     global _poller_task
-    if settings.GOOGLE_OAUTH_REFRESH_TOKEN:
+    if settings.GOOGLE_OAUTH_REFRESH_TOKEN and not settings.DRY_RUN:
         _poller_task = asyncio.create_task(_gmail_poll_loop())
         logger.info("Gmail poller task created")
+    elif settings.DRY_RUN:
+        logger.info("Gmail poller skipped — DRY_RUN mode")
     else:
         logger.info("Gmail poller skipped — no GOOGLE_OAUTH_REFRESH_TOKEN")
 
