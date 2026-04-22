@@ -14,6 +14,7 @@ import httpx
 from modules._base import BaseModule
 from modules.brand_extractor.client import BrandDevClient
 from orchestrator.config import settings
+from shared.anthropic_client import get_client
 from shared.storage import artifact_path, ensure_session_dir
 from shared.types import Artifact, ModuleResult, SessionContext
 
@@ -25,7 +26,7 @@ DEFAULT_PALETTE = {
     "light_bg": "#F5F6FA",
     "primary_accent": "#5B5FC7",
     "secondary_accent": "#818CF8",
-    "neutral_scale": ["#6B7280", "#9CA3AF", "#D1D5DB"],
+    "neutral": ["#6B7280", "#9CA3AF", "#D1D5DB"],
 }
 
 DEFAULT_BRAND_GUIDE = {
@@ -76,6 +77,94 @@ def desaturate(hex_color: str, amount: float = 0.40) -> str:
     return hsl_to_hex(h, max(0.0, s - amount), l)
 
 
+# ── Web search brand fallback ─────────────────────────────────────────
+
+_BRAND_SEARCH_PROMPT = """\
+Search for the website {domain} and find the following brand information:
+
+1. Primary brand color (hex code, e.g. #FF6B00)
+2. Secondary brand color if visible (hex code)
+3. The company's official logo image URL (direct URL to a PNG, SVG, or JPG file)
+4. Brand fonts if identifiable
+
+Return a JSON object (no markdown):
+{{
+  "company_name": "Company Name",
+  "colors": {{
+    "primary": "#HEXCODE",
+    "secondary": "#HEXCODE",
+    "accent": "#HEXCODE"
+  }},
+  "logos": {{
+    "full": "https://...logo.png"
+  }},
+  "fonts": {{
+    "heading": "Font Name",
+    "body": "Font Name"
+  }},
+  "description": "One line company description"
+}}
+
+Only return the JSON. If you can't find a specific field, use null.
+"""
+
+
+async def _web_search_brand_fallback(domain: str, company_name: str) -> dict | None:
+    """Use Claude web search to discover brand colors and logo when Brand.dev fails."""
+    try:
+        client = get_client(settings.ANTHROPIC_API_KEY)
+        resp = await client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=2000,
+            system="You are a brand analyst. Search websites to find brand colors, logos, and fonts.",
+            messages=[{"role": "user", "content": _BRAND_SEARCH_PROMPT.format(domain=domain)}],
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+        )
+
+        text_parts = [b.text for b in resp.content if b.type == "text"]
+        raw_text = "\n".join(text_parts).strip()
+
+        if not raw_text:
+            return None
+
+        # Extract JSON
+        json_str = raw_text
+        if "```" in json_str:
+            match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", json_str, re.DOTALL)
+            if match:
+                json_str = match.group(1)
+        first = json_str.find("{")
+        last = json_str.rfind("}")
+        if first != -1 and last > first:
+            json_str = json_str[first : last + 1]
+
+        data = json.loads(json_str)
+
+        # Validate and normalize
+        colors = data.get("colors") or {}
+        primary = _safe_hex(colors.get("primary"), "#5B5FC7")
+        secondary = _safe_hex(colors.get("secondary"), lighten(primary, 0.15))
+        accent = _safe_hex(colors.get("accent"), lighten(primary, 0.25))
+
+        logos = data.get("logos") or {}
+        fonts = data.get("fonts") or {}
+
+        return {
+            "company_name": data.get("company_name") or company_name,
+            "domain": domain,
+            "colors": {"primary": primary, "secondary": secondary, "accent": accent},
+            "logos": {"full": logos.get("full"), "icon": None},
+            "fonts": {
+                "heading": fonts.get("heading") or "Inter",
+                "body": fonts.get("body") or "Inter",
+            },
+            "description": data.get("description") or "",
+        }
+    except Exception as exc:
+        logger.warning("Web search brand fallback failed for %s: %s", domain, exc)
+        return None
+
+
 # ── Module implementation ─────────────────────────────────────────────
 
 class BrandExtractorModule(BaseModule):
@@ -101,18 +190,25 @@ class BrandExtractorModule(BaseModule):
             raw = await client.get_brand(domain)
         except httpx.HTTPStatusError as exc:
             logger.warning(
-                "Brand.dev HTTP %s for %s — falling back to defaults",
+                "Brand.dev HTTP %s for %s — trying web search fallback",
                 exc.response.status_code,
                 domain,
             )
         except Exception as exc:
-            logger.warning("Brand.dev request failed for %s: %s — falling back", domain, exc)
+            logger.warning("Brand.dev request failed for %s: %s — trying web search fallback", domain, exc)
 
         # ── 2. Parse into brand_guide ─────────────────────────────────
         if raw:
             brand_guide = _parse_brand_response(raw, domain)
         else:
-            brand_guide = {**DEFAULT_BRAND_GUIDE, "domain": domain}
+            # Try Claude web search fallback
+            ws_result = await _web_search_brand_fallback(domain, ctx.target_company or domain)
+            if ws_result:
+                brand_guide = ws_result
+                brand_guide["domain"] = domain
+                logger.info("Brand info recovered via web search for %s", domain)
+            else:
+                brand_guide = {**DEFAULT_BRAND_GUIDE, "domain": domain, "company_name": ctx.target_company or "Unknown"}
 
         # ── 3. Download primary logo ──────────────────────────────────
         logo_artifact: Artifact | None = None
@@ -253,5 +349,5 @@ def _build_palette(primary_hex: str) -> dict:
         "light_bg": light_bg,
         "primary_accent": primary_hex,
         "secondary_accent": secondary_accent,
-        "neutral_scale": neutral_scale,
+        "neutral": neutral_scale,
     }

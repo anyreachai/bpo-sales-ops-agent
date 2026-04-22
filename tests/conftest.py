@@ -43,6 +43,7 @@ def mock_settings(monkeypatch):
     monkeypatch.setattr(settings, "SLACK_BOT_TOKEN", "xoxb-test-token")
     monkeypatch.setattr(settings, "SLACK_SIGNING_SECRET", "")
     monkeypatch.setattr(settings, "API_AUTH_TOKEN", "test-token")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-openai-test-key")
     monkeypatch.setattr(settings, "DRY_RUN", False)
 
 
@@ -62,7 +63,7 @@ async def _mock_call_sonnet(api_key, prompt, system="", max_tokens=4096):
     return mocks.MOCK_CLASSIFICATION_RESPONSE
 
 
-async def _mock_call_opus(api_key, prompt, system="", max_tokens=16000, thinking_budget=10000):
+async def _mock_call_opus(api_key, prompt, system="", max_tokens=16000):
     """Route mock responses for Opus calls."""
     prompt_lower = prompt.lower()
     if "stakeholder" in prompt_lower or "contact" in prompt_lower:
@@ -107,6 +108,11 @@ def mock_anthropic(monkeypatch):
     monkeypatch.setattr("modules.deep_research.module.call_opus_with_search", _mock_call_opus)
     monkeypatch.setattr("modules.stakeholder_intel.module.call_opus_with_search", _mock_call_opus)
     monkeypatch.setattr("modules.cx_intel.scraper.get_client", _mock_get_client)
+    # Also mock the high-level scrape_reviews at the module import site so multi-pass
+    # scraper doesn't make multiple calls during tests
+    async def _mock_scrape_reviews(company_name, company_url, api_key):
+        return dict(mocks.MOCK_REVIEW_DATA)
+    monkeypatch.setattr("modules.cx_intel.module.scrape_reviews", _mock_scrape_reviews)
     # Reset singleton client
     monkeypatch.setattr("shared.anthropic_client._client", None)
 
@@ -225,6 +231,14 @@ class MockAsyncClient:
         # Slack API
         if "slack.com/api" in url:
             return MockResponse(json_data=mocks.MOCK_SLACK_OK_RESPONSE)
+
+        # OpenAI API — submit
+        if "api.openai.com/v1/responses" in url and method == "POST":
+            return MockResponse(json_data=mocks.MOCK_OPENAI_SUBMIT_RESPONSE)
+
+        # OpenAI API — poll
+        if "api.openai.com/v1/responses/" in url and method == "GET":
+            return MockResponse(json_data=mocks.MOCK_OPENAI_POLL_COMPLETED)
 
         # Default: 200 empty
         return MockResponse(json_data={})

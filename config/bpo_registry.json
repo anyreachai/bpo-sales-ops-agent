@@ -1,4 +1,12 @@
 {
+  "test": {
+    "name": "Test BPO",
+    "email_domains": ["test.com", "anyreach.ai"],
+    "drive_folder_id": "1imC2r5xZCpJD_9d9FiLYgYzB5CLXZr9f",
+    "pipeline_sheet_id": "1KJ3xEn4hSh2SkEya1v3cxyS-1hHKeXfPAibltxEFYJw",
+    "key_contacts": ["Richard Lin"],
+    "slack_channel": null
+  },
   "resultscx": {
     "name": "ResultsCX",
     "email_domains": ["resultscx.com"],

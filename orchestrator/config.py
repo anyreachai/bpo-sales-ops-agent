@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     BRAND_DEV_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     API_AUTH_TOKEN: str = "bpo-ops-dash-2026"
+    SHEET_WEBHOOK_SECRET: str = "sheet-sync-2026"
+    PUBLIC_URL: str = ""
     CORS_ORIGINS: str = "*"
     POLL_INTERVAL_SECONDS: int = 300
     APPROVAL_TIMEOUT_HOURS: int = 4

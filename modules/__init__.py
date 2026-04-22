@@ -2,6 +2,7 @@ from modules.classifier import ClassifierModule
 from modules.brand_extractor import BrandExtractorModule
 from modules.demo_generator import DemoGeneratorModule
 from modules.deep_research import DeepResearchModule
+from modules.openai_research import OpenAIResearchModule
 from modules.stakeholder_intel import StakeholderIntelModule
 from modules.cx_intel import CxIntelModule
 from modules.deck_generator import DeckGeneratorModule
@@ -16,6 +17,7 @@ ALL_MODULES = [
     BrandExtractorModule(),
     DemoGeneratorModule(),
     DeepResearchModule(),
+    OpenAIResearchModule(),
     StakeholderIntelModule(),
     CxIntelModule(),
     DeckGeneratorModule(),

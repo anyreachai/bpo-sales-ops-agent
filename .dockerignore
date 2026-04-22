@@ -1,0 +1,11 @@
+.env
+.env.*
+.git
+.pytest_cache
+__pycache__
+*.egg-info
+bpo_sales_ops.egg-info
+tests/
+infra/
+.gitignore
+*.md

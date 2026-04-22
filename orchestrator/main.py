@@ -9,6 +9,7 @@ import json
 import logging
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -40,6 +41,196 @@ logging.basicConfig(
 # ---------------------------------------------------------------------------
 
 _poller_task: asyncio.Task | None = None
+_tracker_task: asyncio.Task | None = None
+_watch_task: asyncio.Task | None = None
+
+BPO_REGISTRY_PATH = Path(__file__).resolve().parent.parent / "config" / "bpo_registry.json"
+
+# Drive push notification state — maps channel_id → {sheet_id, bpo_key, resource_id, expiration}
+_active_watches: dict[str, dict] = {}
+
+
+def _load_bpo_registry() -> dict:
+    if BPO_REGISTRY_PATH.exists():
+        return json.loads(BPO_REGISTRY_PATH.read_text(encoding="utf-8"))
+    return {}
+
+
+async def _pipeline_snapshot_loop() -> None:
+    """Periodically sync BPO pipeline Google Sheets to Postgres."""
+    from orchestrator.deliverable_tracker import (
+        ensure_tracker_schema,
+        sync_pipeline_snapshot,
+    )
+    from shared.google_auth import get_access_token
+
+    logger.info("Pipeline snapshot loop started (interval=300s)")
+    ensure_tracker_schema()
+
+    while True:
+        await asyncio.sleep(300)
+        try:
+            registry = _load_bpo_registry()
+            token = get_access_token(
+                settings.GOOGLE_OAUTH_CLIENT_ID,
+                settings.GOOGLE_OAUTH_CLIENT_SECRET,
+                settings.GOOGLE_OAUTH_REFRESH_TOKEN,
+            )
+
+            for bpo_key, entry in registry.items():
+                sheet_id = entry.get("pipeline_sheet_id")
+                if not sheet_id:
+                    continue
+
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.get(
+                        f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/A:P",
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+
+                if resp.status_code != 200:
+                    logger.warning("Sheet read failed for %s: %d", bpo_key, resp.status_code)
+                    continue
+
+                raw_rows = resp.json().get("values", [])
+                if len(raw_rows) < 2:
+                    continue
+
+                headers_row = raw_rows[0]
+                from orchestrator.deliverable_tracker import ALL_SHEET_COLUMNS
+                col_map = {}
+                for i, h in enumerate(headers_row):
+                    normalized = h.strip().lower().replace(" ", "_")
+                    for col in ALL_SHEET_COLUMNS:
+                        if col in normalized or normalized in col:
+                            col_map[i] = col
+                            break
+
+                parsed = []
+                for data_row in raw_rows[1:]:
+                    row_dict: dict[str, str] = {}
+                    for i, val in enumerate(data_row):
+                        if i in col_map:
+                            row_dict[col_map[i]] = val
+                    if row_dict.get("company", "").strip():
+                        parsed.append(row_dict)
+
+                if parsed:
+                    sync_pipeline_snapshot(bpo_key, parsed)
+
+            logger.info("Pipeline snapshot cycle complete")
+
+        except Exception:
+            logger.exception("Pipeline snapshot error")
+
+
+async def _register_sheet_watches() -> None:
+    """Register Drive API push notifications for all BPO tracker sheets.
+
+    Google Drive push notifications POST to our webhook when a file changes.
+    Watches expire (max 7 days), so we renew them every 6 hours.
+    """
+    import uuid
+    from shared.google_auth import get_access_token
+
+    public_url = settings.PUBLIC_URL.rstrip("/") if settings.PUBLIC_URL else ""
+    if not public_url:
+        logger.info("Sheet watches skipped — PUBLIC_URL not configured")
+        return
+
+    webhook_url = f"{public_url}/api/webhook/sheet-update?secret={settings.SHEET_WEBHOOK_SECRET}"
+    registry = _load_bpo_registry()
+    token = get_access_token(
+        settings.GOOGLE_OAUTH_CLIENT_ID,
+        settings.GOOGLE_OAUTH_CLIENT_SECRET,
+        settings.GOOGLE_OAUTH_REFRESH_TOKEN,
+    )
+
+    for bpo_key, entry in registry.items():
+        sheet_id = entry.get("pipeline_sheet_id")
+        if not sheet_id:
+            continue
+
+        channel_id = f"bpo-watch-{bpo_key}-{uuid.uuid4().hex[:8]}"
+        expiration = int((time.time() + 86400) * 1000)  # 24 hours in ms
+
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    f"https://www.googleapis.com/drive/v3/files/{sheet_id}/watch",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "id": channel_id,
+                        "type": "web_hook",
+                        "address": webhook_url,
+                        "expiration": expiration,
+                    },
+                )
+
+            if resp.status_code == 200:
+                data = resp.json()
+                _active_watches[channel_id] = {
+                    "sheet_id": sheet_id,
+                    "bpo_key": bpo_key,
+                    "resource_id": data.get("resourceId", ""),
+                    "expiration": data.get("expiration", expiration),
+                }
+                logger.info("Registered Drive watch for %s (sheet %s)", bpo_key, sheet_id[:12])
+            else:
+                logger.warning(
+                    "Failed to register watch for %s: %d %s",
+                    bpo_key, resp.status_code, resp.text[:200],
+                )
+        except Exception:
+            logger.exception("Error registering watch for %s", bpo_key)
+
+
+async def _sheet_watch_renewal_loop() -> None:
+    """Renew Drive watches every 6 hours to prevent expiration."""
+    while True:
+        await asyncio.sleep(21600)  # 6 hours
+        try:
+            logger.info("Renewing sheet watches (%d active)", len(_active_watches))
+            # Stop old watches, then re-register
+            await _stop_all_watches()
+            await _register_sheet_watches()
+        except Exception:
+            logger.exception("Sheet watch renewal error")
+
+
+async def _stop_all_watches() -> None:
+    """Stop all active Drive push notification channels."""
+    from shared.google_auth import get_access_token
+
+    if not _active_watches:
+        return
+
+    token = get_access_token(
+        settings.GOOGLE_OAUTH_CLIENT_ID,
+        settings.GOOGLE_OAUTH_CLIENT_SECRET,
+        settings.GOOGLE_OAUTH_REFRESH_TOKEN,
+    )
+
+    for channel_id, info in list(_active_watches.items()):
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.post(
+                    "https://www.googleapis.com/drive/v3/channels/stop",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "id": channel_id,
+                        "resourceId": info["resource_id"],
+                    },
+                )
+        except Exception:
+            pass
+    _active_watches.clear()
 
 
 async def _gmail_poll_loop() -> None:
@@ -284,6 +475,13 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Failed to ensure DB schema — continuing without persistence")
 
+    # Ensure deliverable tracker schema
+    try:
+        from orchestrator.deliverable_tracker import ensure_tracker_schema
+        ensure_tracker_schema()
+    except Exception:
+        logger.exception("Failed to ensure tracker schema — continuing without tracking")
+
     # Register all pipeline modules
     from modules import register_all
 
@@ -291,7 +489,7 @@ async def lifespan(app: FastAPI):
     logger.info("All pipeline modules registered")
 
     # Start Gmail poller if credentials are configured
-    global _poller_task
+    global _poller_task, _tracker_task, _watch_task
     if settings.GOOGLE_OAUTH_REFRESH_TOKEN and not settings.DRY_RUN:
         _poller_task = asyncio.create_task(_gmail_poll_loop())
         logger.info("Gmail poller task created")
@@ -300,15 +498,39 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Gmail poller skipped — no GOOGLE_OAUTH_REFRESH_TOKEN")
 
+    # Start pipeline snapshot tracker (fallback polling)
+    if settings.DATABASE_URL and settings.GOOGLE_OAUTH_REFRESH_TOKEN and not settings.DRY_RUN:
+        _tracker_task = asyncio.create_task(_pipeline_snapshot_loop())
+        logger.info("Pipeline snapshot tracker task created")
+    else:
+        logger.info("Pipeline snapshot tracker skipped (no DB or no Google creds or DRY_RUN)")
+
+    # Register Drive push notifications for real-time sheet sync
+    if (settings.DATABASE_URL and settings.GOOGLE_OAUTH_REFRESH_TOKEN
+            and settings.PUBLIC_URL and not settings.DRY_RUN):
+        try:
+            await _register_sheet_watches()
+            _watch_task = asyncio.create_task(_sheet_watch_renewal_loop())
+            logger.info("Sheet watch renewal loop started")
+        except Exception:
+            logger.exception("Failed to register sheet watches — falling back to polling")
+    else:
+        logger.info("Sheet watches skipped (no PUBLIC_URL or no DB or DRY_RUN)")
+
     yield
 
     # Shutdown
-    if _poller_task and not _poller_task.done():
-        _poller_task.cancel()
-        try:
-            await _poller_task
-        except asyncio.CancelledError:
-            pass
+    try:
+        await _stop_all_watches()
+    except Exception:
+        pass
+    for task in (_poller_task, _tracker_task, _watch_task):
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
     logger.info("BPO Sales Ops Pipeline shut down")
 
 
@@ -341,8 +563,8 @@ app.add_middleware(
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
-    # Skip auth for non-API routes, health, and Slack webhook
-    if path.startswith("/slack/") or path == "/api/health" or not path.startswith("/api/"):
+    # Skip auth for non-API routes, health, Slack webhook, and sheet webhook
+    if path.startswith("/slack/") or path == "/api/health" or path == "/api/webhook/sheet-update" or not path.startswith("/api/"):
         return await call_next(request)
 
     auth_header = request.headers.get("authorization", "")
@@ -569,3 +791,376 @@ async def config_view():
     redacted["DRY_RUN"] = settings.DRY_RUN
 
     return {"config": redacted}
+
+
+# ---------------------------------------------------------------------------
+# Pipeline analytics endpoints (from deliverable tracker)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/pipeline/tracker")
+async def pipeline_tracker_summary():
+    """Full dashboard data from deliverable tracker — partners, pipeline rows, timeline, stale."""
+    if not settings.DATABASE_URL:
+        return {"error": "No DATABASE_URL configured"}
+    from orchestrator.deliverable_tracker import get_dashboard_data
+    registry = _load_bpo_registry()
+    return get_dashboard_data(registry)
+
+
+@app.get("/api/pipeline/{bpo_key}")
+async def pipeline_partner_detail(bpo_key: str):
+    """All pipeline rows for a specific BPO partner."""
+    if not settings.DATABASE_URL:
+        return {"error": "No DATABASE_URL configured"}
+    from orchestrator.deliverable_tracker import get_pipeline_rows
+    rows, last_snapshot = get_pipeline_rows(bpo_key)
+    return {"bpo_key": bpo_key, "rows": rows, "count": len(rows), "last_snapshot_at": last_snapshot}
+
+
+@app.get("/api/timeline")
+async def deliverable_timeline(
+    bpo_key: str | None = None,
+    company: str | None = None,
+    limit: int = 50,
+):
+    """Deliverable completion events."""
+    if not settings.DATABASE_URL:
+        return {"events": []}
+    from orchestrator.deliverable_tracker import get_deliverable_timeline
+    events = get_deliverable_timeline(bpo_key=bpo_key, company=company, limit=limit)
+    for e in events:
+        for k, v in e.items():
+            if hasattr(v, "isoformat"):
+                e[k] = v.isoformat()
+    return {"events": events, "count": len(events)}
+
+
+@app.get("/api/stage-history")
+async def stage_history(
+    bpo_key: str | None = None,
+    company: str | None = None,
+    limit: int = 50,
+):
+    """Stage transition history."""
+    if not settings.DATABASE_URL:
+        return {"changes": []}
+    from orchestrator.deliverable_tracker import get_stage_history
+    changes = get_stage_history(bpo_key=bpo_key, company=company, limit=limit)
+    for c in changes:
+        for k, v in c.items():
+            if hasattr(v, "isoformat"):
+                c[k] = v.isoformat()
+    return {"changes": changes, "count": len(changes)}
+
+
+@app.get("/api/stale")
+async def stale_entries(days: int = 7):
+    """Pipeline entries stuck in the same stage for more than N days."""
+    if not settings.DATABASE_URL:
+        return {"entries": []}
+    from orchestrator.deliverable_tracker import get_stale_pipeline
+    entries = get_stale_pipeline(days_threshold=days)
+    for e in entries:
+        for k, v in e.items():
+            if hasattr(v, "isoformat"):
+                e[k] = v.isoformat()
+            elif isinstance(v, float):
+                e[k] = round(v, 1)
+    return {"entries": entries, "count": len(entries), "threshold_days": days}
+
+
+@app.post("/api/snapshot")
+async def force_snapshot():
+    """Force an immediate pipeline snapshot refresh from Google Sheets."""
+    if not settings.DATABASE_URL:
+        raise HTTPException(status_code=400, detail="No DATABASE_URL configured")
+    if not settings.GOOGLE_OAUTH_REFRESH_TOKEN:
+        raise HTTPException(status_code=400, detail="No Google credentials configured")
+
+    from orchestrator.deliverable_tracker import sync_pipeline_snapshot
+    from shared.google_auth import get_access_token
+
+    registry = _load_bpo_registry()
+    token = get_access_token(
+        settings.GOOGLE_OAUTH_CLIENT_ID,
+        settings.GOOGLE_OAUTH_CLIENT_SECRET,
+        settings.GOOGLE_OAUTH_REFRESH_TOKEN,
+    )
+
+    results = {}
+    for bpo_key, entry in registry.items():
+        sheet_id = entry.get("pipeline_sheet_id")
+        if not sheet_id:
+            results[bpo_key] = {"skipped": True, "reason": "no sheet"}
+            continue
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/A:P",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        if resp.status_code != 200:
+            results[bpo_key] = {"error": f"Sheet read failed: {resp.status_code}"}
+            continue
+
+        raw_rows = resp.json().get("values", [])
+        if len(raw_rows) < 2:
+            results[bpo_key] = {"skipped": True, "reason": "empty sheet"}
+            continue
+
+        headers_row = raw_rows[0]
+        from orchestrator.deliverable_tracker import ALL_SHEET_COLUMNS
+        col_map = {}
+        for i, h in enumerate(headers_row):
+            normalized = h.strip().lower().replace(" ", "_")
+            for col in ALL_SHEET_COLUMNS:
+                if col in normalized or normalized in col:
+                    col_map[i] = col
+                    break
+
+        parsed = []
+        for data_row in raw_rows[1:]:
+            row_dict: dict[str, str] = {}
+            for i, val in enumerate(data_row):
+                if i in col_map:
+                    row_dict[col_map[i]] = val
+            if row_dict.get("company", "").strip():
+                parsed.append(row_dict)
+
+        results[bpo_key] = sync_pipeline_snapshot(bpo_key, parsed)
+
+    return {"snapshot": results}
+
+
+# Debounce: ignore rapid-fire edits within 10 seconds
+_last_webhook_sync: float = 0.0
+
+
+async def _run_snapshot_sync() -> int:
+    """Shared sync logic used by both the webhook and the manual snapshot endpoint."""
+    from orchestrator.deliverable_tracker import sync_pipeline_snapshot, ALL_SHEET_COLUMNS
+    from shared.google_auth import get_access_token
+
+    registry = _load_bpo_registry()
+    token = get_access_token(
+        settings.GOOGLE_OAUTH_CLIENT_ID,
+        settings.GOOGLE_OAUTH_CLIENT_SECRET,
+        settings.GOOGLE_OAUTH_REFRESH_TOKEN,
+    )
+
+    synced = 0
+    for bpo_key, entry in registry.items():
+        sheet_id = entry.get("pipeline_sheet_id")
+        if not sheet_id:
+            continue
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/A:P",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        if resp.status_code != 200:
+            continue
+
+        raw_rows = resp.json().get("values", [])
+        if len(raw_rows) < 2:
+            continue
+
+        headers_row = raw_rows[0]
+        col_map = {}
+        for i, h in enumerate(headers_row):
+            normalized = h.strip().lower().replace(" ", "_")
+            for col in ALL_SHEET_COLUMNS:
+                if col in normalized or normalized in col:
+                    col_map[i] = col
+                    break
+
+        parsed = []
+        for data_row in raw_rows[1:]:
+            row_dict: dict[str, str] = {}
+            for i, val in enumerate(data_row):
+                if i in col_map:
+                    row_dict[col_map[i]] = val
+            if row_dict.get("company", "").strip():
+                parsed.append(row_dict)
+
+        if parsed:
+            sync_pipeline_snapshot(bpo_key, parsed)
+            synced += 1
+
+    return synced
+
+
+@app.post("/api/webhook/sheet-update")
+async def webhook_sheet_update(request: Request):
+    """Webhook for real-time Google Sheet sync.
+
+    Accepts two auth modes:
+    1. Google Drive push notification — identified by X-Goog-Channel-ID header,
+       validated against our registered watches. No secret needed.
+    2. Secret-based — query param or JSON body with "secret" field.
+       Used by manual calls or Apps Script fallback.
+    """
+    global _last_webhook_sync
+
+    # Mode 1: Google Drive push notification
+    goog_channel = request.headers.get("x-goog-channel-id", "")
+    goog_state = request.headers.get("x-goog-resource-state", "")
+
+    if goog_channel:
+        # Validate it's one of our registered channels
+        if goog_channel not in _active_watches:
+            return {"status": "ignored", "reason": "unknown channel"}
+        # "sync" is the initial verification ping — acknowledge but don't sync
+        if goog_state == "sync":
+            logger.info("Drive watch sync ping received for channel %s", goog_channel)
+            return {"status": "ok", "message": "sync acknowledged"}
+        # "update" / "change" means the file was modified
+        logger.info("Drive push notification: %s state=%s", goog_channel, goog_state)
+    else:
+        # Mode 2: Secret-based auth
+        secret = request.query_params.get("secret", "")
+        if not secret:
+            try:
+                body = await request.json()
+                secret = body.get("secret", "")
+            except Exception:
+                secret = ""
+
+        if secret != settings.SHEET_WEBHOOK_SECRET:
+            return Response(
+                content=json.dumps({"detail": "Invalid webhook secret"}),
+                status_code=403,
+                media_type="application/json",
+            )
+
+    # Debounce: skip if we synced within the last 10 seconds
+    now = time.time()
+    if now - _last_webhook_sync < 10:
+        return {"status": "debounced", "message": "Sync already ran within 10s"}
+
+    _last_webhook_sync = now
+
+    if not settings.DATABASE_URL or not settings.GOOGLE_OAUTH_REFRESH_TOKEN:
+        return {"status": "skipped", "message": "No DB or Google creds configured"}
+
+    synced = await _run_snapshot_sync()
+    logger.info("Sheet webhook sync complete: %d partners synced", synced)
+    return {"status": "ok", "partners_synced": synced}
+
+
+@app.post("/api/cleanup-duplicates")
+async def cleanup_duplicates():
+    """Remove duplicate deliverable events and flip-flop stage changes."""
+    if not settings.DATABASE_URL:
+        raise HTTPException(status_code=400, detail="No DATABASE_URL configured")
+    from orchestrator.deliverable_tracker import cleanup_duplicate_events
+    return cleanup_duplicate_events()
+
+
+# ---------------------------------------------------------------------------
+# Convenience endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/bpo-registry")
+async def bpo_registry():
+    """Return the BPO partner registry."""
+    return _load_bpo_registry()
+
+
+@app.get("/api/settings/dry-run")
+async def get_dry_run():
+    return {"dry_run": settings.DRY_RUN}
+
+
+@app.post("/api/settings/dry-run")
+async def set_dry_run(request: Request):
+    body = await request.json()
+    settings.DRY_RUN = bool(body.get("dry_run", False))
+    logger.info("DRY_RUN set to %s", settings.DRY_RUN)
+    return {"dry_run": settings.DRY_RUN}
+
+
+@app.get("/api/architecture")
+async def architecture():
+    """Live system documentation — modules, DAG structure, status."""
+    from orchestrator.registry import all_modules
+
+    modules_info = []
+    for name, mod in all_modules().items():
+        node = NODES.get(name, {})
+        modules_info.append({
+            "name": name,
+            "phase": node.get("phase", Phase.PHASE_1).value if node else "unknown",
+            "deps": node.get("deps", []),
+        })
+
+    return {
+        "version": "2.0.0",
+        "architecture": "DAG-based modular pipeline",
+        "modules": modules_info,
+        "phases": {
+            "phase_1": "Content generation (classify → research → deck)",
+            "phase_2": "Delivery (Drive upload → tracking → email → Slack)",
+        },
+        "background_tasks": {
+            "gmail_poller": bool(_poller_task and not _poller_task.done()),
+            "pipeline_tracker": bool(_tracker_task and not _tracker_task.done()),
+        },
+        "endpoints_count": len(app.routes),
+    }
+
+
+class ResearchRequest(BaseModel):
+    company_url: str
+    company_name: str = ""
+    model: str = "o4-mini-deep-research-2025-06-26"
+
+
+@app.post("/api/research")
+async def on_demand_research(req: ResearchRequest):
+    """Run OpenAI deep research on demand (not tied to a session)."""
+    if not settings.OPENAI_API_KEY:
+        raise HTTPException(status_code=400, detail="OPENAI_API_KEY not configured")
+
+    from modules.openai_research.module import OpenAIResearchModule, O4_MINI_MODEL
+    from shared.types import EmailPayload, SessionContext
+
+    ctx = SessionContext(
+        session_id=f"research_{int(time.time())}",
+        raw_email=EmailPayload(from_address="api", subject="On-demand research", body=""),
+        target_company=req.company_name or req.company_url,
+        target_url=req.company_url,
+        deliverables_requested=["deep_research"],
+    )
+
+    module = OpenAIResearchModule()
+    asyncio.create_task(_run_research_and_notify(module, ctx))
+
+    return {"status": "started", "session_id": ctx.session_id, "model": req.model}
+
+
+async def _run_research_and_notify(module, ctx: SessionContext) -> None:
+    try:
+        result = await module.run(ctx)
+        company = ctx.target_company or "Unknown"
+        if result.status == "success" and settings.SLACK_BOT_TOKEN:
+            meta = result.metadata
+            text = (
+                f"*OpenAI Research Complete: {company}*\n"
+                f"Duration: {meta.get('duration_seconds', 0):.0f}s | "
+                f"Sources: {meta.get('sources', 0)} | "
+                f"Length: {meta.get('content_length', 0)} chars"
+            )
+            async with httpx.AsyncClient() as client:
+                await client.post(
+                    "https://slack.com/api/chat.postMessage",
+                    headers={"Authorization": f"Bearer {settings.SLACK_BOT_TOKEN}"},
+                    json={"channel": settings.SLACK_NOTIFY_CHANNEL, "text": text},
+                    timeout=15,
+                )
+        logger.info("On-demand research complete for %s — %s", company, result.status)
+    except Exception:
+        logger.exception("On-demand research failed for %s", ctx.target_company)

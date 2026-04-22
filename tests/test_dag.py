@@ -12,10 +12,11 @@ from shared.types import ModuleResult
 
 # ── Node structure tests ────────────────────────────────────────────────
 
-def test_phase_1_has_7_nodes():
+def test_phase_1_has_8_nodes():
     phase_1 = {k for k, v in NODES.items() if v["phase"] == Phase.PHASE_1}
-    assert len(phase_1) == 7
+    assert len(phase_1) == 8
     assert "classifier" in phase_1
+    assert "openai_research" in phase_1
     assert "deck_generator" in phase_1
 
 def test_phase_2_has_4_nodes():
@@ -42,9 +43,9 @@ async def test_phase_1_runs_all_nodes(session_factory, registered_modules):
     ctx = session_factory()
     runner = DAGRunner(ctx)
     results = await runner.run_phase(Phase.PHASE_1)
-    assert len(runner.completed) == 7
+    assert len(runner.completed) == 8
     for name in ["classifier", "brand_extractor", "demo_generator", "deep_research",
-                  "stakeholder_intel", "cx_intel", "deck_generator"]:
+                  "openai_research", "stakeholder_intel", "cx_intel", "deck_generator"]:
         assert name in runner.completed
 
 async def test_phase_1_classifier_runs_first(session_factory, registered_modules):

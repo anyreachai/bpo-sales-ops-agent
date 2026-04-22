@@ -166,3 +166,64 @@ def test_config_view(client):
     config = resp.json()["config"]
     assert "ANTHROPIC_API_KEY" in config
     assert "POLL_INTERVAL_SECONDS" in config
+
+
+# ── BPO Registry ───────────────────────────────────────────────────────
+
+def test_bpo_registry(client):
+    resp = client.get("/api/bpo-registry", headers=AUTH)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, dict)
+
+
+# ── Dry-Run Toggle ─────────────────────────────────────────────────────
+
+def test_dry_run_get(client):
+    resp = client.get("/api/settings/dry-run", headers=AUTH)
+    assert resp.status_code == 200
+    assert "dry_run" in resp.json()
+
+
+def test_dry_run_set(client):
+    resp = client.post("/api/settings/dry-run", json={"dry_run": True}, headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["dry_run"] is True
+
+
+# ── Architecture ───────────────────────────────────────────────────────
+
+def test_architecture(client, registered_modules):
+    resp = client.get("/api/architecture", headers=AUTH)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["architecture"] == "DAG-based modular pipeline"
+    module_names = [m["name"] for m in data["modules"]]
+    assert "classifier" in module_names
+    assert "openai_research" in module_names
+
+
+# ── Timeline / Stage / Stale (graceful without DB) ─────────────────────
+
+def test_timeline_no_db(client):
+    resp = client.get("/api/timeline", headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["events"] == []
+
+
+def test_stage_history_no_db(client):
+    resp = client.get("/api/stage-history", headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["changes"] == []
+
+
+def test_stale_no_db(client):
+    resp = client.get("/api/stale", headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["entries"] == []
+
+
+def test_pipeline_tracker_summary_no_db(client):
+    resp = client.get("/api/pipeline/tracker", headers=AUTH)
+    assert resp.status_code == 200
+    assert "error" in resp.json()

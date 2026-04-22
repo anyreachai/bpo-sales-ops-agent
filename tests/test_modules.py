@@ -59,7 +59,7 @@ def test_build_palette():
     assert "light_bg" in palette
     assert "primary_accent" in palette
     assert palette["primary_accent"] == "#3B82F6"
-    assert len(palette["neutral_scale"]) == 3
+    assert len(palette["neutral"]) == 3
 
 
 # -- Deep Research --
@@ -85,7 +85,7 @@ async def test_deep_research_run_success(session_factory):
     assert len(result.artifacts) == 1
     assert result.artifacts[0].artifact_type == "deep_research"
     assert result.artifacts[0].path.exists()
-    assert result.artifacts[0].path.suffix == ".docx"
+    assert result.artifacts[0].path.suffix == ".pdf"
 
 
 async def test_deep_research_short_response(session_factory, monkeypatch):
@@ -316,3 +316,57 @@ async def test_pipeline_tracker_run(session_factory):
     module = PipelineTrackerModule()
     result = await module.run(ctx)
     assert result.status == "success"
+
+
+# -- OpenAI Research --
+
+from modules.openai_research.module import OpenAIResearchModule
+
+
+def test_openai_research_should_run(session_factory):
+    ctx = session_factory(deliverables=["deep_research"])
+    assert OpenAIResearchModule().should_run(ctx) is True
+
+
+def test_openai_research_should_not_run_no_key(session_factory, monkeypatch):
+    from orchestrator.config import settings
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
+    ctx = session_factory(deliverables=["deep_research"])
+    assert OpenAIResearchModule().should_run(ctx) is False
+
+
+def test_openai_research_should_not_run_no_deliverable(session_factory):
+    ctx = session_factory(deliverables=["demo"])
+    assert OpenAIResearchModule().should_run(ctx) is False
+
+
+async def test_openai_research_run_success(session_factory):
+    ctx = session_factory(deliverables=["deep_research"])
+    module = OpenAIResearchModule()
+    result = await module.run(ctx)
+    assert result.status == "success"
+    assert len(result.artifacts) == 1
+    assert result.artifacts[0].path.suffix == ".md"
+    assert result.artifacts[0].path.exists()
+    assert result.metadata["openai_response_id"] == "resp_mock_001"
+    assert result.metadata["sources"] == 2
+
+
+async def test_openai_research_api_error(session_factory, monkeypatch):
+    """When OpenAI returns non-200 on submit, module fails gracefully."""
+    from tests.conftest import MockResponse
+
+    class FailClient:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            pass
+        async def post(self, url, **kw):
+            return MockResponse(status_code=500, json_data={"error": "Internal Server Error"})
+
+    monkeypatch.setattr("httpx.AsyncClient", lambda **kw: FailClient())
+    ctx = session_factory(deliverables=["deep_research"])
+    module = OpenAIResearchModule()
+    result = await module.run(ctx)
+    assert result.status == "failed"
+    assert "500" in result.error

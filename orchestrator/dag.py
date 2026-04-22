@@ -20,6 +20,7 @@ NODES: dict[str, dict] = {
     "brand_extractor":   {"deps": ["classifier"],                                           "phase": Phase.PHASE_1},
     "demo_generator":    {"deps": ["classifier"],                                           "phase": Phase.PHASE_1},
     "deep_research":     {"deps": ["classifier"],                                           "phase": Phase.PHASE_1},
+    "openai_research":   {"deps": ["classifier"],                                           "phase": Phase.PHASE_1},
     "stakeholder_intel": {"deps": ["classifier"],                                           "phase": Phase.PHASE_1},
     "cx_intel":          {"deps": ["classifier"],                                           "phase": Phase.PHASE_1},
     "deck_generator":    {"deps": ["brand_extractor", "deep_research",

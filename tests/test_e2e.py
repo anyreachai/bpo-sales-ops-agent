@@ -20,8 +20,8 @@ async def test_full_pipeline_phase_1(session_factory, registered_modules):
     runner = DAGRunner(ctx)
     results = await runner.run_phase(Phase.PHASE_1)
 
-    # All 7 Phase 1 nodes completed
-    assert len(runner.completed) == 7
+    # All 8 Phase 1 nodes completed
+    assert len(runner.completed) == 8
 
     # Classifier populated context
     assert ctx.bpo is not None
@@ -30,7 +30,7 @@ async def test_full_pipeline_phase_1(session_factory, registered_modules):
     # Brand guide populated
     assert ctx.brand_guide is not None
 
-    # Artifacts generated (deep_research docx, stakeholder pdf, cx xlsx+pdf, deck pptx, brand json)
+    # Artifacts generated (deep_research pdf, stakeholder pdf, cx xlsx+pdf, deck pptx, brand json)
     assert len(ctx.all_artifacts) >= 4
 
     # Verify artifact files exist on disk
@@ -50,8 +50,8 @@ async def test_full_pipeline_phase_2(session_factory, registered_modules):
     # Run Phase 2
     await runner.run_phase(Phase.PHASE_2)
 
-    # All 11 nodes completed
-    assert len(runner.completed) == 11
+    # All 12 nodes completed
+    assert len(runner.completed) == 12
 
     # Drive links populated
     assert "folder" in ctx.drive_links

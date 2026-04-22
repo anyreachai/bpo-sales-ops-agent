@@ -283,3 +283,33 @@ MOCK_GMAIL_DRAFT_RESPONSE = {"id": "draft_001", "message": {"id": "msg_draft_001
 
 # ── Fake PNG bytes (valid minimal header) ──────────────────────────────
 FAKE_PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+
+# ── OpenAI Deep Research mocks ────────────────────────────────────────
+
+MOCK_OPENAI_SUBMIT_RESPONSE = {
+    "id": "resp_mock_001",
+    "status": "queued",
+}
+
+MOCK_OPENAI_POLL_COMPLETED = {
+    "id": "resp_mock_001",
+    "status": "completed",
+    "output_text": "# Company Intelligence Dossier: GameStop\n\n## 1. COMPANY OVERVIEW\nGameStop is a retailer...\n\n## 2. STRATEGIC CONTEXT\nRecent developments include...",
+    "output": [
+        {
+            "content": [
+                {
+                    "annotations": [
+                        {"url": "https://example.com/source1", "title": "GameStop Annual Report"},
+                        {"url": "https://example.com/source2", "title": "Reuters - GameStop Strategy"},
+                    ],
+                },
+            ],
+        },
+    ],
+    "usage": {
+        "input_tokens": 4000,
+        "output_tokens": 15000,
+        "total_tokens": 19000,
+    },
+}

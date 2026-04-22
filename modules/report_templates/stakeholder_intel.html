@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block cover %}
+<div class="cover-page">
+    <div class="cover-stripe"></div>
+    <div class="cover-title">Stakeholder Intelligence Brief</div>
+    <div class="cover-subtitle">{{ contact_name }}{% if contact_title %} &mdash; {{ contact_title }}{% endif %}</div>
+    <div class="cover-subtitle">{{ company_name }}</div>
+    <div class="cover-meta">
+        Prepared {{ date }} &nbsp;&bull;&nbsp; Anyreach Sales Intelligence Platform
+        <br>Confidential — For internal use only
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Quick Reference Card -->
+<h1>Quick Reference</h1>
+<table>
+    <tr>
+        <td style="width: 30%; background-color: #FAFAF9;"><strong>Name</strong></td>
+        <td>{{ contact_name }}</td>
+    </tr>
+    <tr class="alt">
+        <td style="background-color: #FAFAF9;"><strong>Title</strong></td>
+        <td>{{ contact_title or "Not specified" }}</td>
+    </tr>
+    <tr>
+        <td style="background-color: #FAFAF9;"><strong>Company</strong></td>
+        <td>{{ company_name }}</td>
+    </tr>
+    <tr class="alt">
+        <td style="background-color: #FAFAF9;"><strong>Report Date</strong></td>
+        <td>{{ date }}</td>
+    </tr>
+</table>
+
+<div class="callout">
+    <div class="callout-title">Purpose</div>
+    <p>This intelligence brief provides a comprehensive profile of <strong>{{ contact_name }}</strong>
+    {% if contact_title %} ({{ contact_title }}){% endif %} at <strong>{{ company_name }}</strong>,
+    designed to equip the sales team with actionable insights for engagement strategy, relationship
+    development, and deal progression.</p>
+</div>
+
+<!-- Section rendering with type-specific formatting -->
+{% for section in sections %}
+
+{% if not loop.first and loop.index0 % 2 == 0 %}
+<div class="page-break"></div>
+{% endif %}
+
+{% set heading_lower = section.heading|lower %}
+
+{% if "career arc" in heading_lower %}
+{# Career Arc — with timeline-style formatting #}
+<h1>{{ section.heading }}</h1>
+<div class="key-finding">
+    <strong>Career Intelligence:</strong> Understanding {{ contact_name }}'s professional trajectory reveals their priorities, expertise depth, and communication preferences.
+</div>
+<div class="section-content">
+    {{ section.body | markdown }}
+</div>
+
+{% elif "what they control" in heading_lower %}
+{# Decision Authority #}
+<h1>{{ section.heading }}</h1>
+<div class="insight-card">
+    <div class="insight-title">Decision Authority Matrix</div>
+    <div class="insight-body">This section maps {{ contact_name }}'s organizational influence — budget authority, team scope, technology ownership, and vendor management responsibility.</div>
+</div>
+<div class="section-content">
+    {{ section.body | markdown }}
+</div>
+
+{% elif "linkedin" in heading_lower %}
+{# LinkedIn Intelligence #}
+<h1>{{ section.heading }}</h1>
+<div class="section-content">
+    {{ section.body | markdown }}
+</div>
+
+{% elif "network" in heading_lower %}
+{# Network & Orbit #}
+<h1>{{ section.heading }}</h1>
+<div class="insight-card">
+    <div class="insight-title">Warm Introduction Paths</div>
+    <div class="insight-body">Key relationships and connection points that could facilitate introductions or provide social proof.</div>
+</div>
+<div class="section-content">
+    {{ section.body | markdown }}
+</div>
+
+{% elif "company context" in heading_lower %}
+{# Company Context & Timing #}
+<h1>{{ section.heading }}</h1>
+<div class="key-finding">
+    <strong>Timing Signal:</strong> Company context and market conditions that create urgency or opportunity for engagement.
+</div>
+<div class="section-content">
+    {{ section.body | markdown }}
+</div>
+
+{% elif "psychological" in heading_lower %}
+{# Psychological Profile — styled insight cards #}
+<h1>{{ section.heading }}</h1>
+<div class="insight-card">
+    <div class="insight-title">Communication Guide</div>
+    <div class="insight-body">These personality and decision-making insights should shape how the team communicates, what they emphasize, and how they structure the sales process.</div>
+</div>
+<div class="section-content">
+    {{ section.body | markdown }}
+</div>
+
+{% elif "tactical playbook" in heading_lower %}
+{# Tactical Playbook — the most actionable section #}
+<div class="page-break"></div>
+<h1>{{ section.heading }}</h1>
+<div class="key-finding">
+    <strong>Action Required:</strong> This section contains specific, field-ready guidance for the sales team's first engagement with {{ contact_name }}.
+</div>
+<div class="section-content">
+    {{ section.body | markdown }}
+</div>
+
+{% elif "conclusion" in heading_lower %}
+{# Conclusion #}
+<div class="page-break"></div>
+<h1>{{ section.heading }}</h1>
+<div class="callout">
+    <div class="callout-title">Executive Summary</div>
+    <div class="section-content">
+        {{ section.body | markdown }}
+    </div>
+</div>
+
+{% else %}
+{# Default section rendering #}
+<h1>{{ section.heading }}</h1>
+<div class="section-content">
+    {{ section.body | markdown }}
+</div>
+{% endif %}
+
+{% endfor %}
+
+<div class="page-break"></div>
+<div class="disclaimer">
+    <p>Generated by the Anyreach Sales Intelligence Platform.</p>
+    <p>Contents are based on publicly available information, web research, and AI analysis.
+    Unverified claims are marked as inferred. This report does not guarantee the accuracy
+    of third-party data sources.</p>
+</div>
+{% endblock %}

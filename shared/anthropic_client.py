@@ -14,7 +14,7 @@ def get_client(api_key: str) -> anthropic.AsyncAnthropic:
 async def call_sonnet(api_key: str, prompt: str, system: str = "", max_tokens: int = 4096) -> str:
     client = get_client(api_key)
     messages = [{"role": "user", "content": prompt}]
-    kwargs: dict = {"model": "claude-sonnet-4-6-20250514", "max_tokens": max_tokens, "messages": messages}
+    kwargs: dict = {"model": "claude-sonnet-4-6", "max_tokens": max_tokens, "messages": messages}
     if system:
         kwargs["system"] = system
     resp = await client.messages.create(**kwargs)
@@ -26,15 +26,14 @@ async def call_opus_with_search(
     prompt: str,
     system: str = "",
     max_tokens: int = 16000,
-    thinking_budget: int = 10000,
 ) -> str:
     client = get_client(api_key)
     messages = [{"role": "user", "content": prompt}]
     kwargs: dict = {
-        "model": "claude-opus-4-6-20250415",
+        "model": "claude-opus-4-6",
         "max_tokens": max_tokens,
         "messages": messages,
-        "thinking": {"type": "enabled", "budget_tokens": thinking_budget},
+        "thinking": {"type": "adaptive"},
         "tools": [{"type": "web_search_20250305", "name": "web_search"}],
     }
     if system:

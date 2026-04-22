@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block cover %}
+<div class="cover-page">
+    <div class="cover-stripe"></div>
+    <div class="cover-title">CX Intelligence Report</div>
+    <div class="cover-subtitle">{{ company_name }}</div>
+    <div class="cover-meta">
+        Prepared {{ date }} &nbsp;&bull;&nbsp; {{ total_reviews }} reviews across {{ platform_count }} platforms
+        <br>Anyreach CX Intelligence Platform
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- 1. Executive Summary -->
+<h1>Executive Summary</h1>
+
+<table style="width: 100%; margin: 14pt 0;">
+    <tr>
+        <td style="background-color: #FAFAF9; border: 1px solid #E7E5E4; text-align: center; padding: 16pt 10pt 12pt 10pt; width: 33%;">
+            <div style="font-size: 28pt; font-weight: bold; color: {{ brand.accent }}; line-height: 1.0;">{{ overall_rating }}</div>
+            <div style="font-size: 8pt; color: #78716C; text-transform: uppercase; letter-spacing: 0.5pt; margin-top: 4pt;">Overall Rating</div>
+        </td>
+        <td style="background-color: #FAFAF9; border: 1px solid #E7E5E4; text-align: center; padding: 16pt 10pt 12pt 10pt; width: 33%;">
+            <div style="font-size: 28pt; font-weight: bold; color: {{ brand.accent }}; line-height: 1.0;">{{ total_reviews }}</div>
+            <div style="font-size: 8pt; color: #78716C; text-transform: uppercase; letter-spacing: 0.5pt; margin-top: 4pt;">Total Reviews</div>
+        </td>
+        <td style="background-color: #FAFAF9; border: 1px solid #E7E5E4; text-align: center; padding: 16pt 10pt 12pt 10pt; width: 33%;">
+            <div style="font-size: 28pt; font-weight: bold; color: {{ brand.accent }}; line-height: 1.0;">{{ positive_pct }}%</div>
+            <div style="font-size: 8pt; color: #78716C; text-transform: uppercase; letter-spacing: 0.5pt; margin-top: 4pt;">Positive Sentiment</div>
+        </td>
+    </tr>
+</table>
+
+<!-- 2. Analysis Summary -->
+{% if summary %}
+<div class="callout">
+    <div class="callout-title">Key Finding</div>
+    <p>{{ summary }}</p>
+</div>
+{% endif %}
+
+<!-- 3. Platform Ratings -->
+{% if ratings_summary %}
+<h1>Platform Ratings</h1>
+<table>
+    <thead>
+        <tr>
+            <th style="width: 40%;">Platform</th>
+            <th style="width: 20%;">Rating</th>
+            <th style="width: 40%;">Score</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for platform, rating in ratings_summary.items() %}
+        <tr{% if loop.index0 % 2 == 1 %} class="alt"{% endif %}>
+            <td><strong>{{ platform }}</strong></td>
+            <td><span class="rating">{{ rating }}/5</span></td>
+            <td style="font-size: 9pt; color: #78716C;">
+                {{ "★" * (rating | int) }}{{ "☆" * (5 - rating | int) }}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<!-- 4. Sentiment Distribution -->
+{% if sentiment_counts %}
+<h1>Sentiment Distribution</h1>
+<table>
+    <thead>
+        <tr>
+            <th style="width: 35%;">Sentiment</th>
+            <th style="width: 25%;">Count</th>
+            <th style="width: 40%;">Percentage</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><span class="positive">Positive</span></td>
+            <td>{{ sentiment_counts.positive }}</td>
+            <td><strong style="color: #15803D;">{{ sentiment_counts.positive_pct }}%</strong></td>
+        </tr>
+        <tr class="alt">
+            <td><span class="mixed">Mixed</span></td>
+            <td>{{ sentiment_counts.mixed }}</td>
+            <td><strong style="color: #B45309;">{{ sentiment_counts.mixed_pct }}%</strong></td>
+        </tr>
+        <tr>
+            <td><span class="negative">Negative</span></td>
+            <td>{{ sentiment_counts.negative }}</td>
+            <td><strong style="color: #B91C1C;">{{ sentiment_counts.negative_pct }}%</strong></td>
+        </tr>
+    </tbody>
+</table>
+{% endif %}
+
+<!-- 5. Theme Analysis -->
+{% if themes %}
+<div class="page-break"></div>
+<h1>Theme Analysis</h1>
+<table>
+    <thead>
+        <tr>
+            <th style="width: 30%;">Theme</th>
+            <th style="width: 14%;">Frequency</th>
+            <th style="width: 14%;">Sentiment</th>
+            <th style="width: 42%;">Platforms</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for theme in themes %}
+        <tr{% if loop.index0 % 2 == 1 %} class="alt"{% endif %}>
+            <td><strong>{{ theme.theme }}</strong></td>
+            <td><span class="freq-{{ theme.frequency }}">{{ theme.frequency | upper }}</span></td>
+            <td><span class="{{ theme.sentiment | sentiment_class }}">{{ theme.sentiment | capitalize }}</span></td>
+            <td>{{ theme.platforms | join(", ") }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- 6. Theme Detail Cards -->
+{% for theme in themes[:6] %}
+<div class="insight-card">
+    <div class="insight-title">
+        {{ theme.theme }}
+        &nbsp;<span class="freq-{{ theme.frequency }}">{{ theme.frequency | upper }}</span>
+        &nbsp;<span class="{{ theme.sentiment | sentiment_class }}">{{ theme.sentiment | capitalize }}</span>
+    </div>
+    <div class="insight-body">
+        Reported across {{ theme.platforms | join(", ") }} with {{ theme.frequency }} frequency.
+    </div>
+</div>
+{% endfor %}
+{% endif %}
+
+<!-- 7. Review Highlights -->
+{% if reviews %}
+<div class="page-break"></div>
+<h1>Review Highlights</h1>
+<p style="font-size: 9pt; color: #78716C;">Top consumer reviews across all platforms — showing {{ reviews[:15]|length }} of {{ reviews|length }} total reviews.</p>
+
+{% for review in reviews[:15] %}
+<div class="quote-card">
+    <div class="quote-text">&ldquo;{{ review.text }}&rdquo;</div>
+    <div class="quote-meta">
+        <span class="{{ review.sentiment | sentiment_class }}">{{ review.sentiment | capitalize }}</span>
+        &nbsp;&bull;&nbsp; {{ review.platform }}
+        {% if review.rating %}&nbsp;&bull;&nbsp; {{ review.rating }}/5{% endif %}
+        {% if review.date %}&nbsp;&bull;&nbsp; {{ review.date }}{% endif %}
+        {% if review.author %}&nbsp;&bull;&nbsp; {{ review.author }}{% endif %}
+    </div>
+</div>
+{% endfor %}
+{% endif %}
+
+<!-- 8. Employee Sentiment -->
+{% if employee_reviews %}
+<div class="page-break"></div>
+<h1>Employee Sentiment</h1>
+<p style="font-size: 9pt; color: #78716C;">Employee reviews from Glassdoor and Indeed — showing {{ employee_reviews[:12]|length }} of {{ employee_reviews|length }} total.</p>
+
+<table>
+    <thead>
+        <tr>
+            <th style="width: 12%;">Platform</th>
+            <th style="width: 8%;">Rating</th>
+            <th style="width: 20%;">Title</th>
+            <th style="width: 22%;">Pros</th>
+            <th style="width: 22%;">Cons</th>
+            <th style="width: 10%;">Sentiment</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for er in employee_reviews[:12] %}
+        <tr{% if loop.index0 % 2 == 1 %} class="alt"{% endif %}>
+            <td>{{ er.platform }}</td>
+            <td><span class="rating">{{ er.rating }}</span></td>
+            <td><strong>{{ er.title }}</strong></td>
+            <td style="font-size: 8pt;">{{ er.pros }}</td>
+            <td style="font-size: 8pt;">{{ er.cons }}</td>
+            <td><span class="{{ er.sentiment | sentiment_class }}">{{ er.sentiment | capitalize }}</span></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<!-- 9. Recommendations -->
+{% if recommendations %}
+<div class="page-break"></div>
+<h1>Recommendations</h1>
+<p style="font-size: 9pt; color: #78716C;">Prioritized action items based on review analysis and theme severity.</p>
+
+{% for rec in recommendations %}
+<div class="rec-card">
+    <span class="rec-number">{{ loop.index }}</span>
+    &nbsp;<span class="rec-title">{{ rec.title }}</span>
+    <div class="rec-body">{{ rec.body }}</div>
+</div>
+{% endfor %}
+{% endif %}
+
+<!-- 10. Disclaimer -->
+<div class="disclaimer">
+    <p>Generated by Anyreach CX Intelligence Platform.</p>
+    <p>Based on publicly available reviews from third-party platforms. Review data is subject to platform availability and may not represent complete coverage.</p>
+</div>
+{% endblock %}

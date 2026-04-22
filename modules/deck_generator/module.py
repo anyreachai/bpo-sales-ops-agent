@@ -6,7 +6,7 @@ import logging
 import re
 
 from modules._base import BaseModule
-from modules.deck_generator.templates import DEFAULT_PALETTE, create_presentation
+from modules.deck_generator.templates import DEFAULT_PALETTE, TITLE_FONT, BODY_FONT, create_presentation
 from orchestrator.config import settings
 from shared.anthropic_client import call_sonnet
 from shared.storage import artifact_path
@@ -27,24 +27,25 @@ markdown fences, no commentary."""
 SLIDE_SCHEMA_HINT = """\
 Return a JSON array of exactly 10 slide objects. Each object must have:
   - "slide_number": int (1-10)
-  - "type": one of "title", "content", "stats_grid", "comparison", "cta"
+  - "type": one of "title", "content", "stats_grid", "comparison", "quote", "cta"
   - "heading": string (short slide title)
 
 Type-specific fields:
   title  -> "title", "subtitle", "prepared_for"
   content -> "heading", "subheading" (optional), "bullets" (list of strings, 3-6 items)
-  stats_grid -> "heading", "stats" (list of {"value": "XX%", "label": "..."}, 3-4 items)
-  comparison -> "heading", "left": {"title": str, "bullets": [...]}, "right": {"title": str, "bullets": [...]}
+  stats_grid -> "heading", "stats" (list of {{"value": "XX%", "label": "..."}}, 3-4 items)
+  comparison -> "heading", "left": {{"title": str, "bullets": [...]}}, "right": {{"title": str, "bullets": [...]}}
+  quote -> "heading", "quote" (customer/analyst quote), "attribution" (source)
   cta -> "heading", "bullets" (3-4 next-step items), "contact" (string)
 
 Slide plan (follow this order exactly):
   1. title — "{company_name}: Transforming CX with AI"
-  2. content — "The CX Challenge" (prospect pain points)
-  3. content — "Market Context" (industry trends)
+  2. content — "The CX Challenge" (prospect pain points, be specific)
+  3. content — "Market Context" (industry trends with data)
   4. content — "Voice of the Customer" (themes from review data)
-  5. content — "The Anyreach Solution" (capabilities)
-  6. comparison — "How It Works" (before/after with Anyreach)
-  7. stats_grid — "Results & Proof Points" (metrics)
+  5. content — "The Anyreach Solution" (capabilities matched to pain points)
+  6. comparison — "Current State vs. Anyreach" (before/after contrast)
+  7. stats_grid — "Results & Proof Points" (concrete metrics, 3-4 stats)
   8. content — "Implementation Approach" (timeline & methodology)
   9. content — "Why Anyreach + {bpo_name}" (partnership value)
   10. cta — "Next Steps" (clear CTA with contact info)
@@ -147,11 +148,24 @@ def _resolve_palette(ctx: SessionContext) -> dict:
     if ctx.brand_guide and isinstance(ctx.brand_guide, dict):
         custom_palette = ctx.brand_guide.get("deck_palette")
         if custom_palette and isinstance(custom_palette, dict):
-            # Merge custom over defaults so we never miss a key
             merged = dict(DEFAULT_PALETTE)
             merged.update(custom_palette)
+            # Normalize neutral_scale → neutral for backward compat
+            if "neutral_scale" in merged and "neutral" not in merged:
+                merged["neutral"] = merged.pop("neutral_scale")
             return merged
     return dict(DEFAULT_PALETTE)
+
+
+def _resolve_fonts(ctx: SessionContext) -> dict:
+    """Extract font names from brand_guide, or return defaults."""
+    if ctx.brand_guide and isinstance(ctx.brand_guide, dict):
+        fonts = ctx.brand_guide.get("fonts", {})
+        return {
+            "heading": fonts.get("heading") or TITLE_FONT,
+            "body": fonts.get("body") or BODY_FONT,
+        }
+    return {"heading": TITLE_FONT, "body": BODY_FONT}
 
 
 class DeckGeneratorModule(BaseModule):
@@ -196,8 +210,9 @@ class DeckGeneratorModule(BaseModule):
                 metadata={"raw_response_preview": raw_response[:500]},
             )
 
-        # 3. Resolve palette
+        # 3. Resolve palette and fonts
         palette = _resolve_palette(ctx)
+        fonts = _resolve_fonts(ctx)
 
         # 4. Determine logo path (if brand_guide provides one)
         logo_path = None
@@ -212,6 +227,7 @@ class DeckGeneratorModule(BaseModule):
             company_name=company,
             bpo_name=bpo_name,
             logo_path=logo_path,
+            fonts=fonts,
         )
 
         # 6. Save to disk
