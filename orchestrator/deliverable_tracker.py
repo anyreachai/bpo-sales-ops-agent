@@ -481,6 +481,12 @@ def get_stale_pipeline(days_threshold: int = 7) -> list[dict]:
            FROM pipeline_state ps
            LEFT JOIN latest_stage ls USING (bpo_key, company)
            WHERE EXTRACT(EPOCH FROM (NOW() - COALESCE(ls.changed_at, ps.first_seen_at))) / 86400 > %s
+             AND NOT (
+                 COALESCE(TRIM(ps.cx_intel_link), '') != ''
+                 AND COALESCE(TRIM(ps.deep_dive_link), '') != ''
+                 AND COALESCE(TRIM(ps.stakeholder_link), '') != ''
+                 AND COALESCE(TRIM(ps.presentation_link), '') != ''
+             )
            ORDER BY days_in_stage DESC""",
         (days_threshold,),
     )
@@ -540,6 +546,12 @@ def _get_dashboard_data_impl(bpo_registry: dict) -> dict:
            FROM pipeline_state ps
            LEFT JOIN latest_stage ls USING (bpo_key, company)
            WHERE EXTRACT(EPOCH FROM (NOW() - COALESCE(ls.changed_at, ps.first_seen_at))) / 86400 > 7
+             AND NOT (
+                 COALESCE(TRIM(ps.cx_intel_link), '') != ''
+                 AND COALESCE(TRIM(ps.deep_dive_link), '') != ''
+                 AND COALESCE(TRIM(ps.stakeholder_link), '') != ''
+                 AND COALESCE(TRIM(ps.presentation_link), '') != ''
+             )
            ORDER BY days_in_stage DESC"""
     )
     stale_raw = cur.fetchall()
