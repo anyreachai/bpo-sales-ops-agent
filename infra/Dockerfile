@@ -2,9 +2,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# System deps for reportlab, python-pptx
+# System deps for reportlab, python-pptx, pycairo (xhtml2pdf → svglib)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev && \
+    gcc libpq-dev pkg-config libcairo2-dev meson && \
     rm -rf /var/lib/apt/lists/*
 
 COPY . .
