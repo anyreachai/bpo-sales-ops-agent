@@ -59,11 +59,12 @@ def create_session(email: EmailPayload, dry_run: bool = False) -> SessionContext
         dry_run=dry_run,
     )
     if settings.DATABASE_URL:
+        context_json = json.dumps(ctx.model_dump(mode="json", exclude={"all_artifacts"}))
         with _conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "INSERT INTO sessions (session_id, status, raw_email, context) VALUES (%s, %s, %s, %s)",
-                    (sid, "received", json.dumps(email.model_dump()), "{}"),
+                    (sid, "received", json.dumps(email.model_dump(mode="json")), context_json),
                 )
             conn.commit()
     else:
