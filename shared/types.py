@@ -23,6 +23,7 @@ class BPOPartner(BaseModel):
     pipeline_sheet_id: str | None = None
     key_contacts: list[str] = []
     slack_channel: str | None = None
+    attio_record_id: str | None = None
 
 
 class IntakeAnswers(BaseModel):

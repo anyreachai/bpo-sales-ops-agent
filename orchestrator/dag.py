@@ -27,6 +27,7 @@ NODES: dict[str, dict] = {
                                     "stakeholder_intel", "cx_intel"],                        "phase": Phase.PHASE_1},
     "drive_manager":     {"deps": ["deck_generator"],                                       "phase": Phase.PHASE_2},
     "pipeline_tracker":  {"deps": ["drive_manager"],                                        "phase": Phase.PHASE_2},
+    "attio_sync":        {"deps": ["drive_manager"],                                        "phase": Phase.PHASE_2},
     "email_composer":    {"deps": ["drive_manager"],                                        "phase": Phase.PHASE_2},
     "slack_summary":     {"deps": ["pipeline_tracker", "email_composer"],                   "phase": Phase.PHASE_2},
 }

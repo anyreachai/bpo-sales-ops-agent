@@ -10,6 +10,7 @@ from modules.drive_manager import DriveManagerModule
 from modules.pipeline_tracker import PipelineTrackerModule
 from modules.slack_manager import SlackManagerModule
 from modules.email_composer import EmailComposerModule
+from modules.attio_sync import AttioSyncModule
 from orchestrator.registry import register
 
 ALL_MODULES = [
@@ -25,6 +26,7 @@ ALL_MODULES = [
     PipelineTrackerModule(),
     SlackManagerModule(),
     EmailComposerModule(),
+    AttioSyncModule(),
 ]
 
 def register_all() -> None:

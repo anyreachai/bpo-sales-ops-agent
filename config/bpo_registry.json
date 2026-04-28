@@ -5,7 +5,8 @@
     "drive_folder_id": "1imC2r5xZCpJD_9d9FiLYgYzB5CLXZr9f",
     "pipeline_sheet_id": "1KJ3xEn4hSh2SkEya1v3cxyS-1hHKeXfPAibltxEFYJw",
     "key_contacts": ["Richard Lin"],
-    "slack_channel": null
+    "slack_channel": null,
+    "attio_record_id": null
   },
   "resultscx": {
     "name": "ResultsCX",
@@ -13,7 +14,8 @@
     "drive_folder_id": "1P9kkcNdPibjwHlk3tOh-Xr7UnvJIR2BB",
     "pipeline_sheet_id": "1LYhYMYX2hWiAzTT5bRCgIIswycchV-UbIWNjcLBXPiY",
     "key_contacts": ["Jordan Armstrong", "Michelle Jourdan", "Will Hendleman"],
-    "slack_channel": null
+    "slack_channel": null,
+    "attio_record_id": "6cfc06d6-7ed2-4cf1-bdc1-b276dbd53acf"
   },
   "esal": {
     "name": "eSAL",
@@ -21,7 +23,8 @@
     "drive_folder_id": "1-uIENKNcavFnbqsL9ITtiANHZUhpRhl4",
     "pipeline_sheet_id": "1M_fnzR1G1ArHPE5e7W-pnGzAS7dmxqshnOsdJzig7Hs",
     "key_contacts": ["Kojo Hayford"],
-    "slack_channel": null
+    "slack_channel": null,
+    "attio_record_id": "069762d7-40f0-403f-b0a1-a415eaa46ddc"
   },
   "startek": {
     "name": "Startek",
@@ -29,7 +32,8 @@
     "drive_folder_id": "1mg74nTK-gYKPMUsAXRJ79h4GtJ8si1bk",
     "pipeline_sheet_id": "1lj7F2F23fm9PbXTHnSNyfWa5O_lhZxh-8tQz1aeHonE",
     "key_contacts": ["Sid Mukherjee"],
-    "slack_channel": null
+    "slack_channel": null,
+    "attio_record_id": "e5bcfa52-0fb7-46aa-8feb-645cdef61f00"
   },
   "cgs": {
     "name": "CGS",
@@ -37,7 +41,8 @@
     "drive_folder_id": "1gYImwsn0QHSyNjdno9TA2sG_dEkCi7cO",
     "pipeline_sheet_id": null,
     "key_contacts": [],
-    "slack_channel": null
+    "slack_channel": null,
+    "attio_record_id": null
   },
   "cp360": {
     "name": "CP360",
@@ -45,6 +50,25 @@
     "drive_folder_id": "1vDVJh9ewDJ25E56qAcSYy6vHazAN-sHQ",
     "pipeline_sheet_id": "1dnWo4JYlpUypmaa86nqg6P9J7kr0uYRS6CamG8HPLZw",
     "key_contacts": [],
-    "slack_channel": null
+    "slack_channel": null,
+    "attio_record_id": "e419a5b1-de55-4b41-980d-6b20f13a15cb"
+  },
+  "sibs": {
+    "name": "SIBS",
+    "email_domains": [],
+    "drive_folder_id": "",
+    "pipeline_sheet_id": null,
+    "key_contacts": [],
+    "slack_channel": null,
+    "attio_record_id": "642359ff-60cf-4055-b689-1217f4b049fa"
+  },
+  "egs": {
+    "name": "Emerging Global Services",
+    "email_domains": [],
+    "drive_folder_id": "",
+    "pipeline_sheet_id": null,
+    "key_contacts": [],
+    "slack_channel": null,
+    "attio_record_id": "25fb54dc-3c8e-4dac-9916-30175e36b6cb"
   }
 }

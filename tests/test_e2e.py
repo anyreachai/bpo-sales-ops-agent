@@ -50,8 +50,8 @@ async def test_full_pipeline_phase_2(session_factory, registered_modules):
     # Run Phase 2
     await runner.run_phase(Phase.PHASE_2)
 
-    # All 12 nodes completed
-    assert len(runner.completed) == 12
+    # All 13 nodes completed (attio_sync skips when ATTIO_API_KEY is unset)
+    assert len(runner.completed) == 13
 
     # Drive links populated
     assert "folder" in ctx.drive_links

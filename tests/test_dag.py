@@ -19,11 +19,12 @@ def test_phase_1_has_8_nodes():
     assert "openai_research" in phase_1
     assert "deck_generator" in phase_1
 
-def test_phase_2_has_4_nodes():
+def test_phase_2_has_5_nodes():
     phase_2 = {k for k, v in NODES.items() if v["phase"] == Phase.PHASE_2}
-    assert len(phase_2) == 4
+    assert len(phase_2) == 5
     assert "drive_manager" in phase_2
     assert "slack_summary" in phase_2
+    assert "attio_sync" in phase_2
 
 def test_classifier_has_no_deps():
     assert NODES["classifier"]["deps"] == []

@@ -51,6 +51,7 @@ def _match_bpo(registry: dict, sender_domain: str) -> BPOPartner | None:
                 pipeline_sheet_id=entry.get("pipeline_sheet_id"),
                 key_contacts=entry.get("key_contacts", []),
                 slack_channel=entry.get("slack_channel"),
+                attio_record_id=entry.get("attio_record_id"),
             )
     return None
 

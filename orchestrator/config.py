@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     DRY_RUN: bool = False
     TEMP_DIR: str = "/tmp/bpo-ops"
     BPO_DOMAINS: str = "resultscx.com,esal.com,esalglobal.com,startek.com,cgsinc.com,cp360.com"
+    ATTIO_API_KEY: str = ""
+    ATTIO_SYNC_ENABLED: bool = True
 
     @property
     def bpo_domain_list(self) -> list[str]:
