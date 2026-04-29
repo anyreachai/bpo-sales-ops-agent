@@ -5,7 +5,7 @@ An AI-powered sales operations pipeline that automatically processes inbound BPO
 ```
   +-----------+      +----------------+      +------------------+      +-----------+
   |   Gmail   | ---> |  FastAPI + DAG | ---> |  Slack Approval  | ---> |  Google   |
-  |   Inbox   |      |  (12 Modules)  |      |  (Approve/Reject)|      |  Drive    |
+  |   Inbox   |      |  (13 Modules)  |      |  (Approve/Reject)|      |  Drive    |
   +-----------+      +----------------+      +------------------+      +-----------+
        |                    |                        |                       |
    BPO emails          Claude AI              Human review             Artifacts
@@ -90,7 +90,7 @@ bpo-sales-ops/
  |   |-- config.py              Pydantic settings (env vars)
  |   +-- registry.py            Module registration system
  |
- |-- modules/                   12 pipeline modules
+ |-- modules/                   13 pipeline modules
  |   |-- classifier/            Email classification + BPO matching
  |   |-- brand_extractor/       Brand.dev API + color palette generation
  |   |-- demo_generator/        Demo link lookup
@@ -101,6 +101,7 @@ bpo-sales-ops/
  |   |-- deck_generator/        AI slide content -> shadcn-styled .pptx pitch deck
  |   |-- drive_manager/         Google Drive upload + folder management
  |   |-- pipeline_tracker/      Google Sheets + Postgres pipeline state
+ |   |-- attio_sync/            Attio CRM upsert by domain + BPO connector link
  |   |-- email_composer/        AI email draft -> Gmail draft creation
  |   +-- slack_manager/         Block Kit summary message
  |
@@ -122,7 +123,7 @@ bpo-sales-ops/
  |   +-- poller.py              Gmail API polling with dedup + skip filters
  |
  |-- config/
- |   +-- bpo_registry.json      6 BPO partner definitions
+ |   +-- bpo_registry.json      8 BPO partner definitions (incl. Attio record IDs)
  |
  |-- infra/
  |   |-- Dockerfile             Python 3.12-slim, port 8080
@@ -131,7 +132,7 @@ bpo-sales-ops/
  |-- railway.toml               Railway deployment config
  |-- .dockerignore              Docker build exclusions
  |
- +-- tests/                     116 tests, all passing
+ +-- tests/                     143 tests, all passing
      |-- conftest.py            Shared fixtures + MockAsyncClient
      |-- mocks.py               Mock API responses
      |-- test_api.py            Endpoint tests (incl. webhook, tracker, dashboard)
@@ -139,7 +140,9 @@ bpo-sales-ops/
      |-- test_dag.py            DAG execution tests
      |-- test_e2e.py            Full pipeline tests
      |-- test_gmail_poller.py   14 poller tests
-     +-- test_modules.py        Module unit tests (all 12 modules)
+     |-- test_session_persistence.py  3 SessionContext JSON roundtrip tests
+     |-- test_attio_sync.py     24 Attio sync tests (extract_domain, payload, gates, errors)
+     +-- test_modules.py        Module unit tests (all 13 modules)
 ```
 
 ---
@@ -224,20 +227,21 @@ The pipeline is a directed acyclic graph executed in two phases with automatic d
        |  subfolder)      |
        +--------+---------+
                 |
-       +--------+--------+
-       |                  |
-       v                  v
-  +----+--------+  +------+------+
-  |  pipeline   |  |   email     |  Batch 1 (parallel)
-  |  tracker    |  |  composer   |
-  |             |  |             |
-  | Update      |  | Sonnet ->   |
-  | Google      |  | HTML email  |
-  | Sheet +     |  | -> Gmail    |
-  | Postgres    |  | draft       |
-  +----+--------+  +------+------+
-       |                  |
-       +--------+---------+
+       +--------+--------+--------+
+       |                 |        |
+       v                 v        v
+  +----+--------+  +-----+-----+  +----+------+
+  |  pipeline   |  |  attio    |  |  email    |  Batch 1 (parallel)
+  |  tracker    |  |  sync     |  |  composer |
+  |             |  |           |  |           |
+  | Update      |  | Upsert    |  | Sonnet -> |
+  | Google      |  | Company   |  | HTML mail |
+  | Sheet +     |  | by domain |  | -> Gmail  |
+  | Postgres    |  | + connect |  | draft     |
+  |             |  | to BPO    |  |           |
+  +----+--------+  +-----+-----+  +-----+-----+
+       |                                |
+       +--------+-----------------------+
                 |
                 v
        +--------+---------+
@@ -249,6 +253,8 @@ The pipeline is a directed acyclic graph executed in two phases with automatic d
        +------------------+
 
   Status: approved -> delivering -> complete
+  Note: slack_summary is intentionally NOT gated on attio_sync —
+        Attio failures must not block customer-facing artifacts.
 ```
 
 ---
@@ -274,6 +280,7 @@ The pipeline is a directed acyclic graph executed in two phases with automatic d
 |--------|---------|-------------|
 | **drive_manager** | Google Drive API | Finds or creates company subfolder under BPO's root folder, uploads all artifacts via multipart upload, returns shareable links |
 | **pipeline_tracker** | Google Sheets + Postgres | Updates the BPO's pipeline tracking sheet with delivery metadata (folder link, demo link, draft URL). Also upserts Postgres `pipeline_state` |
+| **attio_sync** | Attio CRM API | Upserts the prospect Company in Attio by domain (`PUT /v2/objects/companies/records?matching_attribute=domains`) and sets `connector_bpo_channel_partner` to point at the BPO's Attio Company record. Skips when `ATTIO_API_KEY` is unset, the BPO has no `attio_record_id`, or no `target_url` is present |
 | **email_composer** | Claude Sonnet + Gmail API | Generates a professional follow-up email via Sonnet, creates it as a Gmail draft (reply-to the original sender) |
 | **slack_summary** | Slack API | Posts a Block Kit delivery summary to the configured Slack channel with all Drive links and artifact details |
 
@@ -517,7 +524,7 @@ CREATE TABLE sessions (
       |                         |
       v                         |
  +----+------+                  |
- | delivering|  <-- Phase 2 running (4 modules)
+ | delivering|  <-- Phase 2 running (5 modules)
  +----+------+                  |
       |                         |
       +-------+---------+      |
@@ -626,6 +633,8 @@ All configuration is via environment variables (loaded from `.env`):
 |----------|-------------|
 | `OPENAI_API_KEY` | OpenAI research module |
 | `BRAND_DEV_API_KEY` | Brand.dev logo/color lookups (falls back to defaults) |
+| `ATTIO_API_KEY` | Attio CRM bearer token. Without it `attio_sync` skips gracefully |
+| `ATTIO_SYNC_ENABLED` | Default `true`. Set to `false` to disable `attio_sync` without removing the key |
 
 ### Webhook & Deployment
 
