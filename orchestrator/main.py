@@ -57,12 +57,12 @@ def _load_bpo_registry() -> dict:
 
 
 async def _pipeline_snapshot_loop() -> None:
-    """Periodically sync BPO pipeline Google Sheets to Postgres."""
-    from orchestrator.deliverable_tracker import (
-        ensure_tracker_schema,
-        sync_pipeline_snapshot,
-    )
-    from shared.google_auth import get_access_token
+    """Periodically sync BPO pipeline Google Sheets to Postgres + Attio.
+
+    Calls the same chokepoint as the Drive push-notification webhook so
+    behavior stays in sync between real-time and fallback-poll paths.
+    """
+    from orchestrator.deliverable_tracker import ensure_tracker_schema
 
     logger.info("Pipeline snapshot loop started (interval=300s)")
     ensure_tracker_schema()
@@ -70,56 +70,13 @@ async def _pipeline_snapshot_loop() -> None:
     while True:
         await asyncio.sleep(300)
         try:
-            registry = _load_bpo_registry()
-            token = get_access_token(
-                settings.GOOGLE_OAUTH_CLIENT_ID,
-                settings.GOOGLE_OAUTH_CLIENT_SECRET,
-                settings.GOOGLE_OAUTH_REFRESH_TOKEN,
+            summary = await _run_snapshot_sync()
+            logger.info(
+                "Pipeline snapshot cycle complete: %d partners synced, "
+                "%d Attio links added",
+                summary.get("partners_synced", 0),
+                summary.get("attio_added", 0),
             )
-
-            for bpo_key, entry in registry.items():
-                sheet_id = entry.get("pipeline_sheet_id")
-                if not sheet_id:
-                    continue
-
-                async with httpx.AsyncClient(timeout=30) as client:
-                    resp = await client.get(
-                        f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/A:P",
-                        headers={"Authorization": f"Bearer {token}"},
-                    )
-
-                if resp.status_code != 200:
-                    logger.warning("Sheet read failed for %s: %d", bpo_key, resp.status_code)
-                    continue
-
-                raw_rows = resp.json().get("values", [])
-                if len(raw_rows) < 2:
-                    continue
-
-                headers_row = raw_rows[0]
-                from orchestrator.deliverable_tracker import ALL_SHEET_COLUMNS
-                col_map = {}
-                for i, h in enumerate(headers_row):
-                    normalized = h.strip().lower().replace(" ", "_")
-                    for col in ALL_SHEET_COLUMNS:
-                        if col in normalized or normalized in col:
-                            col_map[i] = col
-                            break
-
-                parsed = []
-                for data_row in raw_rows[1:]:
-                    row_dict: dict[str, str] = {}
-                    for i, val in enumerate(data_row):
-                        if i in col_map:
-                            row_dict[col_map[i]] = val
-                    if row_dict.get("company", "").strip():
-                        parsed.append(row_dict)
-
-                if parsed:
-                    sync_pipeline_snapshot(bpo_key, parsed)
-
-            logger.info("Pipeline snapshot cycle complete")
-
         except Exception:
             logger.exception("Pipeline snapshot error")
 
@@ -937,9 +894,17 @@ async def force_snapshot():
 _last_webhook_sync: float = 0.0
 
 
-async def _run_snapshot_sync() -> int:
-    """Shared sync logic used by both the webhook and the manual snapshot endpoint."""
+async def _run_snapshot_sync(only_bpo_key: str | None = None) -> dict[str, Any]:
+    """Shared sync logic used by both the webhook and the manual snapshot endpoint.
+
+    For each BPO with a pipeline_sheet_id (or just one when ``only_bpo_key``
+    is given), fetches the sheet, writes a deliverable snapshot to Postgres,
+    and appends any new prospects to the BPO's Attio ``bpo_referred_account``.
+
+    Returns a summary dict: {"partners_synced", "attio_added", "attio_results"}.
+    """
     from orchestrator.deliverable_tracker import sync_pipeline_snapshot, ALL_SHEET_COLUMNS
+    from modules.bpo_sheet_sync import sync_bpo_referred_accounts
     from shared.google_auth import get_access_token
 
     registry = _load_bpo_registry()
@@ -949,8 +914,13 @@ async def _run_snapshot_sync() -> int:
         settings.GOOGLE_OAUTH_REFRESH_TOKEN,
     )
 
-    synced = 0
+    partners_synced = 0
+    attio_added_total = 0
+    attio_results: list[dict[str, Any]] = []
+
     for bpo_key, entry in registry.items():
+        if only_bpo_key and bpo_key != only_bpo_key:
+            continue
         sheet_id = entry.get("pipeline_sheet_id")
         if not sheet_id:
             continue
@@ -987,10 +957,30 @@ async def _run_snapshot_sync() -> int:
                 parsed.append(row_dict)
 
         if parsed:
-            sync_pipeline_snapshot(bpo_key, parsed)
-            synced += 1
+            try:
+                sync_pipeline_snapshot(bpo_key, parsed)
+                partners_synced += 1
+            except Exception:
+                logger.exception("Postgres snapshot failed for %s", bpo_key)
 
-    return synced
+            try:
+                attio_outcome = await sync_bpo_referred_accounts(
+                    bpo_key,
+                    entry.get("attio_record_id"),
+                    parsed,
+                )
+                attio_results.append(attio_outcome)
+                attio_added_total += int(attio_outcome.get("added", 0))
+            except Exception:
+                logger.exception(
+                    "Attio bpo_referred_account sync failed for %s", bpo_key
+                )
+
+    return {
+        "partners_synced": partners_synced,
+        "attio_added": attio_added_total,
+        "attio_results": attio_results,
+    }
 
 
 @app.post("/api/webhook/sheet-update")
@@ -1046,9 +1036,13 @@ async def webhook_sheet_update(request: Request):
     if not settings.DATABASE_URL or not settings.GOOGLE_OAUTH_REFRESH_TOKEN:
         return {"status": "skipped", "message": "No DB or Google creds configured"}
 
-    synced = await _run_snapshot_sync()
-    logger.info("Sheet webhook sync complete: %d partners synced", synced)
-    return {"status": "ok", "partners_synced": synced}
+    summary = await _run_snapshot_sync()
+    logger.info(
+        "Sheet webhook sync complete: %d partners synced, %d Attio links added",
+        summary.get("partners_synced", 0),
+        summary.get("attio_added", 0),
+    )
+    return {"status": "ok", **summary}
 
 
 @app.post("/api/cleanup-duplicates")
@@ -1058,6 +1052,31 @@ async def cleanup_duplicates():
         raise HTTPException(status_code=400, detail="No DATABASE_URL configured")
     from orchestrator.deliverable_tracker import cleanup_duplicate_events
     return cleanup_duplicate_events()
+
+
+@app.post("/api/attio/sync-bpo-referred")
+async def sync_bpo_referred(request: Request):
+    """Manually trigger the Sheet → Attio bpo_referred_account sync.
+
+    Query params:
+      bpo_key (optional) — sync only this BPO. Omit to sync all eligible BPOs.
+
+    Useful for ad-hoc backfills and verification without waiting for a
+    sheet edit. Honors DRY_RUN.
+    """
+    if not settings.GOOGLE_OAUTH_REFRESH_TOKEN:
+        raise HTTPException(
+            status_code=400,
+            detail="GOOGLE_OAUTH_REFRESH_TOKEN not configured",
+        )
+    if not settings.ATTIO_API_KEY:
+        raise HTTPException(
+            status_code=400, detail="ATTIO_API_KEY not configured",
+        )
+
+    bpo_key = request.query_params.get("bpo_key") or None
+    summary = await _run_snapshot_sync(only_bpo_key=bpo_key)
+    return {"status": "ok", **summary}
 
 
 # ---------------------------------------------------------------------------

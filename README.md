@@ -494,6 +494,23 @@ CREATE TABLE sessions (
 );
 ```
 
+### Sheet → Attio `bpo_referred_account` Sync
+
+In addition to mirroring sheet rows into Postgres, every snapshot cycle also propagates the listed companies into each BPO's Attio `bpo_referred_account` multi-select on its company record. This keeps the canonical "which prospects has this BPO referred?" view in Attio current, sourced from the BPO's own pipeline tracker.
+
+**Eligibility.** A BPO is included only if its registry entry has *both* `pipeline_sheet_id` and `attio_record_id` set. Currently: ResultsCX, eSAL, Startek, CP360, SIBS. EGS and CGS are skipped (no sheet) — EGS's hand-curated entries are therefore preserved untouched.
+
+**Append-only.** The sync only *adds* prospects; it never removes entries already in `bpo_referred_account`. Deleting a row from the sheet does **not** unlink the company in Attio. This is by design — a fat-fingered sheet edit can't wipe historical links.
+
+**Matching.** Each row's company is upserted in Attio by domain (parsed from `website_url`) using the existing `assert_company` PUT, then the resulting prospect record is added to the BPO's list. Rows without a company name or without a parseable domain are skipped (counted in the cycle log).
+
+**Trigger paths.**
+- Drive push notification → `POST /api/webhook/sheet-update` — real-time, fires within seconds of a sheet edit.
+- 5-minute fallback polling loop — same code path; a safety net if a watch lapses.
+- `POST /api/attio/sync-bpo-referred?bpo_key=startek` — manual ad-hoc backfill (Bearer-auth, optional `bpo_key` param; omit to sync all eligible BPOs). Honors `DRY_RUN`.
+
+**Adding a new BPO.** (1) Add an entry to `config/bpo_registry.json` with `pipeline_sheet_id` + `attio_record_id`, (2) share the sheet with `anyreach@anyreach-console.iam.gserviceaccount.com` as Editor, (3) confirm the source-of-truth tab is the first tab in the workbook (the snapshot reads `A:P` of the default sheet — currently assumed to be `pipeline (2026)`).
+
 ---
 
 ## Session Lifecycle
