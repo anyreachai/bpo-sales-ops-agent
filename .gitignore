@@ -10,3 +10,4 @@ dist/
 build/
 /tmp/
 .cache/
+.env.cloudrun.yaml

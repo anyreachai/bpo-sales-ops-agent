@@ -712,6 +712,35 @@ The project deploys to Railway with auto-deploy from the `main` branch.
 
 **Domain:** `https://bpo-sales-ops-agent-production.up.railway.app`
 
+### Google Cloud Run
+
+The pipeline also runs as a Cloud Run service in `anyreach-console` / `us-central1`.
+
+**Files:**
+- `cloudbuild.yaml` — Builds the image with `infra/Dockerfile` and pushes to Artifact Registry (`cloud-run-source-deploy/bpo-sales-ops`)
+- `.env.cloudrun.yaml` — Local-only YAML for `--env-vars-file` (gitignored)
+
+**Deploy commands:**
+
+```bash
+# Build + push image
+gcloud builds submit --config cloudbuild.yaml \
+  --project anyreach-console --region us-central1 .
+
+# Deploy to Cloud Run
+gcloud run deploy bpo-sales-ops \
+  --image us-central1-docker.pkg.dev/anyreach-console/cloud-run-source-deploy/bpo-sales-ops:latest \
+  --project anyreach-console --region us-central1 \
+  --platform managed --allow-unauthenticated \
+  --port 8080 --memory 2Gi --cpu 2 --timeout 900 \
+  --concurrency 20 --min-instances 0 --max-instances 5 \
+  --env-vars-file .env.cloudrun.yaml
+```
+
+**Service URL:** `https://bpo-sales-ops-788431076434.us-central1.run.app`
+
+The legacy Managed-Agent service `bpo-sales-ops-poller` runs in parallel until the new service is fully validated.
+
 ### Docker Compose (Local)
 
 ```bash
