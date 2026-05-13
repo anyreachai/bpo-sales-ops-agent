@@ -227,3 +227,91 @@ def test_pipeline_tracker_summary_no_db(client):
     resp = client.get("/api/pipeline/tracker", headers=AUTH)
     assert resp.status_code == 200
     assert "error" in resp.json()
+
+
+# ── Legacy compatibility shims (Lovable dashboard) ──────────────────────
+
+def test_options_preflight_returns_cors_headers(client):
+    """OPTIONS preflight must bypass auth so CORSMiddleware can answer.
+
+    Regression guard: auth_middleware previously returned 401 with no CORS
+    headers on OPTIONS, which the browser surfaced as a CORS error and
+    blocked every authed call from the Lovable dashboard.
+    """
+    origin = "https://preview--faithful-snapshot-mirror.lovable.app"
+    resp = client.options(
+        "/api/dashboard",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers.get("access-control-allow-origin") == origin
+
+
+def test_health_legacy_no_auth_and_shape(client):
+    """/health is no-auth and matches the legacy poller payload shape."""
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    for key in ("tracked_messages", "pending_approvals", "total_sessions"):
+        assert key in data
+        assert isinstance(data[key], int)
+
+
+def test_dashboard_alias_matches_pipeline_tracker(client):
+    """/api/dashboard returns the same payload as /api/pipeline/tracker."""
+    a = client.get("/api/dashboard", headers=AUTH)
+    b = client.get("/api/pipeline/tracker", headers=AUTH)
+    assert a.status_code == 200
+    assert b.status_code == 200
+    assert a.json() == b.json()
+
+
+def test_approvals_legacy_filters_by_status(client, in_memory_sessions):
+    """/api/approvals returns only sessions in awaiting_approval state."""
+    # Seed two sessions: one received, one awaiting_approval
+    r1 = client.post("/api/process", json={
+        "from_address": "jarmstrong@resultscx.com",
+        "subject": "Pending",
+        "body": "Pending body",
+    }, headers=AUTH)
+    pending_id = r1.json()["session_id"]
+    in_memory_sessions[pending_id]["detail"]["status"] = "awaiting_approval"
+
+    client.post("/api/process", json={
+        "from_address": "jarmstrong@resultscx.com",
+        "subject": "Received",
+        "body": "Received body",
+    }, headers=AUTH)
+
+    resp = client.get("/api/approvals", headers=AUTH)
+    assert resp.status_code == 200
+    data = resp.json()
+    ids = [row["session_id"] for row in data["approvals"]]
+    assert pending_id in ids
+    assert all(row["status"] == "awaiting_approval" for row in data["approvals"])
+    assert data["count"] == len(data["approvals"])
+
+
+def test_approvals_legacy_reject_routes_through(client, in_memory_sessions):
+    """POST /api/approvals/{id}/reject forwards to the new reject handler."""
+    resp = client.post("/api/process", json={
+        "from_address": "jarmstrong@resultscx.com",
+        "subject": "Legacy reject test",
+        "body": "body",
+    }, headers=AUTH)
+    session_id = resp.json()["session_id"]
+    in_memory_sessions[session_id]["ctx"].status = "awaiting_approval"
+    in_memory_sessions[session_id]["detail"]["status"] = "awaiting_approval"
+
+    resp = client.post(
+        f"/api/approvals/{session_id}/reject",
+        json={"reason": "test", "rejected_by": "tester"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "rejected"

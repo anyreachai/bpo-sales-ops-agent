@@ -323,7 +323,7 @@ ModuleResult
 
 ## API Reference
 
-All endpoints except `/api/health`, `/slack/interactions`, and `/api/webhook/sheet-update` require `Authorization: Bearer <API_AUTH_TOKEN>`.
+All endpoints except `/api/health`, `/health`, `/slack/interactions`, and `/api/webhook/sheet-update` require `Authorization: Bearer <API_AUTH_TOKEN>`. `OPTIONS` (CORS preflight) is never gated on auth.
 
 ### Core Pipeline
 
@@ -411,6 +411,31 @@ GET  /api/architecture
 POST /api/research
      Body: { "company": str, "research_type": str }
      Response: Triggers standalone research task
+```
+
+### Legacy compatibility shims
+
+Thin adapters that match the older `bpo-sales-ops-poller` API surface. They
+exist so the Lovable dashboard (built against the poller spec) keeps working
+against this service.
+
+```
+GET  /health                                  (no auth)
+     Response: { "status": "ok", "tracked_messages": int,
+                 "pending_approvals": int, "total_sessions": int }
+
+GET  /api/dashboard
+     Alias for /api/pipeline/tracker
+
+GET  /api/approvals?limit=50
+     Response: { "approvals": [...], "count": int }
+     Filters sessions to status="awaiting_approval"
+
+POST /api/approvals/{session_id}/approve
+     Forwards to POST /api/sessions/{session_id}/approve
+
+POST /api/approvals/{session_id}/reject
+     Forwards to POST /api/sessions/{session_id}/reject
 ```
 
 ---

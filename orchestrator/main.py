@@ -518,10 +518,21 @@ app.add_middleware(
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
+    # CORS preflight: let CORSMiddleware answer. Browsers send OPTIONS
+    # without an Authorization header by spec, so gating preflight on auth
+    # returns 401 with no CORS headers and the browser blocks the real GET.
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     path = request.url.path
 
-    # Skip auth for non-API routes, health, Slack webhook, and sheet webhook
-    if path.startswith("/slack/") or path == "/api/health" or path == "/api/webhook/sheet-update" or not path.startswith("/api/"):
+    # Skip auth for non-API routes, health, Slack webhook, and sheet webhook.
+    # `/health` is the legacy poller shape and stays no-auth like its sibling.
+    if (
+        path.startswith("/slack/")
+        or path in ("/health", "/api/health", "/api/webhook/sheet-update")
+        or not path.startswith("/api/")
+    ):
         return await call_next(request)
 
     auth_header = request.headers.get("authorization", "")
@@ -550,6 +561,51 @@ async def auth_middleware(request: Request, call_next):
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "version": "1.0.0"}
+
+
+# ---------------------------------------------------------------------------
+# Legacy compatibility shims
+#
+# The Lovable dashboard at preview--faithful-snapshot-mirror.lovable.app was
+# built against the older `bpo-sales-ops-poller` service. These adapters keep
+# it working unchanged against this service so the legacy Cloud Run service
+# can be retired.
+# ---------------------------------------------------------------------------
+
+@app.get("/health")
+async def health_legacy():
+    """Legacy poller `/health` shape. Counts come from the sessions table."""
+    total = list_sessions(limit=10000)
+    pending = [r for r in total if r.get("status") == "awaiting_approval"]
+    return {
+        "status": "ok",
+        "tracked_messages": len(total),
+        "pending_approvals": len(pending),
+        "total_sessions": len(total),
+    }
+
+
+@app.get("/api/dashboard")
+async def dashboard_legacy():
+    """Alias for /api/pipeline/tracker — same combined-data payload."""
+    return await pipeline_tracker_summary()
+
+
+@app.get("/api/approvals")
+async def approvals_legacy(limit: int = 50):
+    """Sessions awaiting approval, shaped as legacy {approvals, count}."""
+    rows = list_sessions(limit=limit, status="awaiting_approval")
+    return {"approvals": rows, "count": len(rows)}
+
+
+@app.post("/api/approvals/{session_id}/approve")
+async def approve_legacy(session_id: str, req: ApproveRequest | None = None):
+    return await approve_session(session_id, req)
+
+
+@app.post("/api/approvals/{session_id}/reject")
+async def reject_legacy(session_id: str, req: RejectRequest | None = None):
+    return await reject_session(session_id, req)
 
 
 @app.post("/api/process")
