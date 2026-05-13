@@ -200,3 +200,48 @@ async def test_rejection_flow(in_memory_sessions, registered_modules):
 
     # Verify no Phase 2 artifacts
     assert "drive_manager" not in ctx.module_results or ctx.module_results.get("drive_manager") is None
+
+
+# ── No-plan short-circuit ──────────────────────────────────────────────
+
+async def test_phase_1_short_circuits_when_classifier_finds_no_plan(
+    in_memory_sessions, registered_modules, monkeypatch,
+):
+    """Internal BPO emails (no target_company / no deliverables) must not ping Slack.
+
+    Regression guard: the Gmail poller grabs every unread email from a BPO
+    domain. Internal threads (PO confirmations, training schedules) come back
+    from the classifier with target_company=None and deliverables=[]. They
+    should land in `no_plan` and never trigger _post_slack_approval.
+    """
+    from orchestrator.session import create_session
+
+    async def no_plan_sonnet(*args, **kwargs):
+        sys = kwargs.get("system", "")
+        if "classifier" in sys.lower() or "bpo" in sys.lower():
+            return '{"target_company": null, "deliverables": [], "confidence": "low"}'
+        return "{}"
+    monkeypatch.setattr("modules.classifier.module.call_sonnet", no_plan_sonnet)
+
+    slack_calls: list = []
+    async def fake_slack_post(ctx):
+        slack_calls.append(ctx.session_id)
+    monkeypatch.setattr("orchestrator.main._post_slack_approval", fake_slack_post)
+
+    email = EmailPayload(
+        from_address="aakash.shripat@startek.com",
+        subject="Anyreach platform training for Digital Team",
+        body="Hi team, scheduling next training session for our digital crew.",
+        message_id="msg_no_plan_001",
+    )
+    ctx = create_session(email)
+
+    await run_phase_1(ctx.session_id)
+
+    final = in_memory_sessions[ctx.session_id]["ctx"]
+    assert final.status == "no_plan"
+    assert final.target_company in (None, "")
+    assert final.deliverables_requested == []
+    assert slack_calls == [], (
+        f"Slack should not be pinged for no-plan sessions, got: {slack_calls}"
+    )

@@ -307,6 +307,20 @@ async def run_phase_1(session_id: str) -> None:
         runner = DAGRunner(ctx)
         await runner.run_phase(Phase.PHASE_1)
 
+        # Short-circuit: classifier produced nothing actionable. Common for
+        # internal BPO emails (PO confirmations, training threads, scheduling
+        # replies) that match the Gmail domain filter but aren't demo requests.
+        # Don't ping Slack — the row stays inspectable via /api/sessions.
+        if not ctx.target_company or not ctx.deliverables_requested:
+            ctx.status = "no_plan"
+            update_status(session_id, "no_plan")
+            save_session(ctx)
+            logger.info(
+                "Phase 1 produced no plan for %s (target=%r, deliverables=%r) — skipping Slack",
+                session_id, ctx.target_company, ctx.deliverables_requested,
+            )
+            return
+
         ctx.status = "awaiting_approval"
         update_status(session_id, "awaiting_approval")
         save_session(ctx)
